@@ -1,0 +1,96 @@
+# Python-related files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.tgz
+*.tar.gz
+*.ini
+
+# Virtual Environment
+.venv/
+env/
+venv/
+
+# Real secrets must NOT be committed
+.env
+.env.local
+.env.*.local
+
+# BUT the committed example template should be tracked
+!.env.example
+
+# Build / Distribution
+dist/
+build/
+site/
+
+# Logs / Reports
+*.log
+*.log.*
+*.logfire
+*.coverage/
+log/
+
+# Caches
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.gradio/
+.history/
+temp/
+
+# IDE / Editor Files
+.idea/
+.vscode/
+.vscode/settings.json
+
+# Framework-specific files
+local_neo4jWorkDir/
+neo4jWorkDir/
+
+# Data & Storage
+inputs/
+rag_storage*/
+querynest_storage/
+querynest_output/
+examples/input/
+examples/output/
+output*/
+parsed/
+mineru/
+
+# Miscellaneous
+.DS_Store
+TODO.md
+ignore_this.txt
+*.ignore.*
+
+# Project-specific files
+dickens*/
+book.txt
+LightRAG.pdf
+LightRAG_2-4.pdf
+download_models_hf.py
+lightrag-dev/
+gui/
+tiktoken_cache/
+
+# unit-test files
+test_*
+
+# Cline files
+memory-bank/
+
+# AI
+.claude/
+.cursor/
+CLAUDE.md
+
+# Local ad-hoc test scripts (run on demand, not for publishing)
+qn_*.py
+/_*.py
+
+# Private / personal test corpus (not meant to be published)
+testdata/

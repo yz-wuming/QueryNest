@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-08-28T16:43:17",
+  "dataset": "evaluation/datasets/sample.json",
+  "num_examples": 4,
+  "top_k": 10,
+  "metrics": {
+    "recall@5": 0.0,
+    "recall@10": 0.0,
+    "precision@5": 0.0,
+    "precision@10": 0.0,
+    "mrr@10": 0.0,
+    "ndcg@10": 0.0,
+    "faithfulness": 0.0,
+    "answer_relevancy": null
+  },
+  "results": [
+    {
+      "question": "QueryNest 的混合检索包含哪几条召回路径？",
+      "recall@5": 0.0,
+      "precision@5": 0.0,
+      "recall@10": 0.0,
+      "precision@10": 0.0,
+      "mrr@10": 0.0,
+      "ndcg@10": 0.0,
+      "faithfulness": 0.0,
+      "faithfulness_method": "lexical_heuristic",
+      "answer_relevancy": null
+    },
+    {
+      "question": "QueryNest 的回答如何做到带有引用？",
+      "recall@5": 0.0,
+      "precision@5": 0.0,
+      "recall@10": 0.0,
+      "precision@10": 0.0,
+      "mrr@10": 0.0,
+      "ndcg@10": 0.0,
+      "faithfulness": 0.0,
+      "faithfulness_method": "lexical_heuristic",
+      "answer_relevancy": null
+    },
+    {
+      "question": "QueryNest 用哪个库提供知识图谱检索？",
+      "recall@5": 0.0,
+      "precision@5": 0.0,
+      "recall@10": 0.0,
+      "precision@10": 0.0,
+      "mrr@10": 0.0,
+      "ndcg@10": 0.0,
+      "faithfulness": 0.0,
+      "faithfulness_method": "lexical_heuristic",
+      "answer_relevancy": null
+    },
+    {
+      "question": "QueryNest 的文档管理提供哪些操作？",
+      "recall@5": 0.0,
+      "precision@5": 0.0,
+      "recall@10": 0.0,
+      "precision@10": 0.0,
+      "mrr@10": 0.0,
+      "ndcg@10": 0.0,
+      "faithfulness": 0.0,
+      "faithfulness_method": "lexical_heuristic",
+      "answer_relevancy": null
+    }
+  ],
+  "elapsed_seconds": 0.0
+}

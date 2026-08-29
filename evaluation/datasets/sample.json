@@ -1,0 +1,25 @@
+{
+  "_comment": "QueryNest evaluation sample dataset. 这是评测输入（问题+期望来源），不是任何模型的实测性能分数。数字类指标结果由 querynest evaluate 在真实检索上运行后写入 results.json。",
+  "examples": [
+    {
+      "question": "QueryNest 的混合检索包含哪几条召回路径？",
+      "expected_answer": "Dense、Keyword(BM25)、Knowledge Graph",
+      "expected_sources": ["sample.txt"]
+    },
+    {
+      "question": "QueryNest 的回答如何做到带有引用？",
+      "expected_answer": "检索命中携带 document/page/content_type/score 元数据，citation 系统规整为 [1][2] 引用",
+      "expected_sources": ["sample.txt"]
+    },
+    {
+      "question": "QueryNest 用哪个库提供知识图谱检索？",
+      "expected_answer": "LightRAG",
+      "expected_sources": ["sample.txt"]
+    },
+    {
+      "question": "QueryNest 的文档管理提供哪些操作？",
+      "expected_answer": "list / get / delete / exists / status",
+      "expected_sources": ["sample.txt"]
+    }
+  ]
+}

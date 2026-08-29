@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QueryNest · 多模态文档智能与 RAG</title>
+<style>
+:root{
+  --bg:#fafafa;              /* 应用背景 */
+  --panel:#ffffff;           /* 侧栏/面板/卡片 */
+  --border:#e6e6e9;          /* 细边框 */
+  --border-strong:#d3d3d8;   /* 强调边框/hover */
+  --text:#1a1a1f;            /* 主文字 近黑 */
+  --text-2:#5b5b62;          /* 次要文字 */
+  --text-3:#9a9aa1;          /* 弱化文字 */
+  --accent:#2563eb;          /* 低饱和蓝 */
+  --accent-hover:#1d4ed8;
+  --accent-soft:#eff4ff;     /* 激活浅蓝底 */
+  --danger:#dc2626;
+  --ok:#16a34a;
+  --radius:6px;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"SF Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important} /* .chat-page 的 display:flex 会覆盖 hidden 属性，需强制隐藏 */
+html,body{height:100%}
+body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text);
+     font-size:14px;line-height:1.55;overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer}
+input,textarea,select{font-family:inherit}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ---------- 布局 ---------- */
+.app{display:grid;grid-template-columns:224px 1fr;height:100vh}
+
+/* ---------- 侧栏 ---------- */
+.sidebar{background:var(--panel);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;min-width:0}
+.brand{display:flex;align-items:center;gap:9px;padding:16px 18px;border-bottom:1px solid var(--border)}
+.brand .mark{width:24px;height:24px;border-radius:6px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:none}
+.brand .name{font-size:14px;font-weight:600;letter-spacing:.1px;color:var(--text)}
+.brand .desc{font-size:10.5px;color:var(--text-3);margin-top:1px}
+.nav{padding:10px 8px;flex:1;overflow:auto}
+.nav .group{font-size:10px;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--text-3);padding:12px 10px 6px;font-weight:500}
+.nav a{position:relative;display:flex;align-items:center;gap:10px;padding:7px 10px;margin:1px 0;
+  border-radius:5px;color:var(--text-2);text-decoration:none;font-size:13px;
+  border:1px solid transparent}
+.nav a svg{flex:none;opacity:.8}
+.nav a:hover{background:var(--bg);color:var(--text)}
+.nav a.active{background:var(--accent-soft);color:var(--accent);font-weight:500;border-color:#dfe9ff}
+.nav a.active::before{content:"";position:absolute;left:-8px;top:5px;bottom:5px;width:2px;
+  border-radius:1px;background:var(--accent)}
+.nav a.active svg{opacity:1}
+.sidebar .foot{border-top:1px solid var(--border);padding:11px 18px;font-size:11px;
+  color:var(--text-3);display:flex;align-items:center;gap:6px}
+.sidebar .foot svg{opacity:.6;flex:none}
+
+/* ---------- 主区 ---------- */
+.main{overflow:auto;background:var(--bg);scrollbar-gutter:stable}
+.section{max-width:1000px;margin:0 auto;padding:28px 32px 64px}
+.topbar{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  margin:0 0 18px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.topbar h1{font-size:15px;font-weight:600;margin:0;color:var(--text)}
+.topbar .sub{font-size:12px;color:var(--text-3);margin-top:2px}
+.topbar .actions{display:flex;gap:8px;align-items:center;margin-left:auto}
+
+/* ---------- 通用控件 ---------- */
+.btn{background:var(--panel);border:1px solid var(--border-strong);color:var(--text);
+  padding:6px 13px;border-radius:5px;font-size:13px;line-height:1.4;transition:border-color .12s,background .12s}
+.btn:hover{border-color:var(--text-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--text-2)}
+.btn.ghost:hover{background:var(--bg);color:var(--text);border-color:transparent}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.danger{color:var(--danger);border-color:#f0d0d0}
+.btn.danger:hover{border-color:var(--danger);background:#fef3f3}
+.btn.sm{padding:4px 9px;font-size:12px}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--text-2)}
+.small{font-size:12px}
+.thin{color:var(--text-3)}
+.err{border:1px solid #f0d0d0;background:#fef3f3;color:#b42318;border-radius:5px;
+  padding:10px 14px;font-size:13px;white-space:pre-wrap}
+
+/* ---------- Chat ---------- */
+.chat-page{max-width:860px;margin:0 auto;height:100%;padding:0 28px 16px;
+  display:flex;flex-direction:column}
+.chat-page .topbar{margin:0 0 4px;padding:14px 0 10px}
+.thread{flex:1;overflow:auto;padding:8px 2px 20px}
+.thread::-webkit-scrollbar{width:8px}
+.thread::-webkit-scrollbar-thumb{background:#d9d9dd;border-radius:4px}
+
+/* 空状态 */
+.empty-state{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;gap:0;padding-bottom:8vh}
+.empty-state .es-logo{width:40px;height:40px;border-radius:10px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin-bottom:18px}
+.empty-state h2{margin:0;font-size:19px;font-weight:600;color:var(--text)}
+.empty-state p{margin:8px 0 26px;font-size:13px;color:var(--text-3)}
+.es-chips{display:grid;grid-template-columns:repeat(2,minmax(0,240px));gap:10px;width:100%;max-width:500px}
+.chip{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:11px 14px;
+  font-size:13px;color:var(--text-2);text-align:left;transition:border-color .12s,color .12s}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 消息流 */
+.turn.user{display:flex;justify-content:flex-end;margin:0 0 20px}
+.turn.user .q{max-width:78%;background:#f0f0f2;border:1px solid #e8e8ea;color:var(--text);
+  border-radius:10px 10px 3px 10px;padding:9px 15px;white-space:pre-wrap;font-size:13.5px;line-height:1.6}
+.turn.assist{margin:0 0 26px}
+.turn.assist .mhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.turn.assist .mhead .dot{width:16px;height:16px;border-radius:4px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+.turn.assist .mhead span{font-size:12.5px;font-weight:600;color:var(--text-2)}
+.answer{font-size:14px;line-height:1.7;color:var(--text);padding:2px 24px 0 3px}
+.answer p{margin:0 0 12px}
+.answer p:last-child{margin-bottom:0}
+.answer h1,.answer h2,.answer h3,.answer h4{font-weight:600;margin:18px 0 8px;line-height:1.35}
+.answer h1{font-size:17px}.answer h2{font-size:15.5px}.answer h3{font-size:14px}
+.answer h4,.answer h5,.answer h6{font-size:13.5px;color:var(--text-2)}
+.answer ul,.answer ol{margin:0 0 12px;padding-left:22px}
+.answer li{margin:3px 0}
+.answer code{font-family:var(--mono);font-size:12.5px;background:#f0f0f2;border:1px solid #ebebee;
+  padding:1px 5px;border-radius:4px;color:#374151}
+.answer pre{background:#0f1115;color:#e6e8ec;border-radius:6px;padding:13px 15px;overflow:auto;
+  margin:0 0 12px;border:1px solid #1c1f26}
+.answer pre code{background:transparent;border:none;padding:0;color:inherit;font-size:12.5px;line-height:1.6}
+.answer blockquote{margin:0 0 12px;padding:2px 14px;border-left:3px solid var(--border-strong);
+  color:var(--text-2)}
+.answer table{border-collapse:collapse;width:100%;margin:0 0 12px;font-size:12.5px}
+.answer th,.answer td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+.answer th{background:var(--bg);font-weight:600}
+.answer a{text-decoration:none;border-bottom:1px solid #c3d5f5}
+
+/* 折叠：Sources / Retrieval */
+details.collap{border-top:1px solid var(--border);margin-top:8px}
+details.collap summary{list-style:none;cursor:pointer;padding:8px 3px;font-size:12px;
+  color:var(--text-2);display:flex;align-items:center;gap:7px;user-select:none}
+details.collap summary::-webkit-details-marker{display:none}
+details.collap summary:hover{color:var(--accent)}
+details.collap summary .cnt{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--text-3);
+  background:#f0f0f2;border-radius:999px;padding:0 8px;font-size:11px}
+details.collap[open] summary{color:var(--accent)}
+details.collap .dbox{padding:4px 3px 12px}
+.src-item{display:flex;gap:11px;padding:8px 0;border-top:1px solid var(--border)}
+.src-item:first-child{border-top:none}
+.src-item .n{flex:none;width:19px;height:19px;border-radius:4px;border:1px solid var(--border-strong);
+  color:var(--text-2);font-size:11px;display:flex;align-items:center;justify-content:center}
+.src-item .meta{font-size:12px;}
+.src-item .meta .doc{font-weight:500;color:var(--text)}
+.src-item .meta .tag{font-size:10.5px;color:var(--accent);border:1px solid #dfe9ff;background:var(--accent-soft);
+  border-radius:4px;padding:0 5px;margin-left:6px}
+.src-item .ex{color:var(--text-3);font-size:12px;margin-top:3px;line-height:1.5;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:4px 14px;font-size:12.5px}
+.kv dt{color:var(--text-3)}
+.kv dd{margin:0;color:var(--text-2);word-break:break-all}
+
+/* ---------- 输入框 ---------- */
+.composer{position:relative;border:1px solid var(--border-strong);border-radius:10px;
+  background:var(--panel);padding:10px 12px 8px;margin-top:4px;box-shadow:0 1px 3px rgba(20,20,30,.04)}
+.composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.10)}
+.composer textarea{width:100%;resize:none;border:none;outline:none;font-size:13.5px;line-height:1.55;
+  color:var(--text);max-height:180px;background:transparent;padding:2px 0 4px}
+.composer .cbar{display:flex;align-items:center;gap:8px;padding-top:6px;margin-top:2px}
+.composer .hint-hint{font-size:11px;color:var(--text-3);padding:2px 10px 0;}
+.composer .hint-hint{display:none}
+.composer:focus-within .hint-hint{display:block}
+.composer select{border:1px solid var(--border);border-radius:5px;font-size:12px;padding:3px 8px;
+  color:var(--text-2);background:var(--panel);outline:none}
+.composer select:hover{border-color:var(--border-strong)}
+.attach{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;background:transparent;
+  color:var(--text-2);font-size:12px;padding:4px 7px;border-radius:5px}
+.attach:hover{background:var(--bg);color:var(--text)}
+.attach svg{flex:none}
+
+/* ---------- 文档表格 ---------- */
+.table-wrap{border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--panel)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--text-3);font-weight:500;background:#f6f6f7;padding:8px 14px;border-bottom:1px solid var(--border)}
+.tbl tbody td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tbody tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover{background:var(--bg)}
+.tbl .fname{font-weight:500;color:var(--text)}
+.tbl .ftype{font-family:var(--mono);font-size:11.5px;color:var(--text-2)}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--border)}
+.badge.ok{color:var(--ok);border-color:#c9ead3;background:#f2faf4}
+.badge.pending{color:#b45309;border-color:#f2e0bc;background:#fdf8ec}
+.badge.dim{color:var(--text-3);background:#f4f4f5;border-color:var(--border)}
+.tag{font-size:11px;color:var(--text-2);border:1px solid var(--border);border-radius:4px;
+  padding:0 5px;margin-right:4px;background:var(--panel)}
+.empty{padding:46px 16px;text-align:center;color:var(--text-3);font-size:13px}
+#upstatus{font-size:12px;color:var(--text-2);min-height:18px}
+
+/* ---------- 指标 ---------- */
+.metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:22px}
+.metric{border:1px solid var(--border);border-radius:6px;background:var(--panel);padding:13px 16px}
+.metric .k{font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:500}
+.metric .v{font-size:21px;font-weight:600;margin-top:5px;font-variant-numeric:tabular-nums;color:var(--text)}
+.metric .v.dim{color:var(--text-3);font-weight:400}
+.metric .u{font-size:11px;color:var(--text-3);margin-left:4px}
+.meta-line{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--text-2);
+  padding:8px 1px 0;margin-bottom:4px}
+.meta-line .thin{font-size:11px}
+.section h2{font-size:13px;font-weight:600;margin:24px 0 10px;color:var(--text)}
+
+/* ---------- API ---------- */
+.api{border:1px solid var(--border);border-radius:6px;background:var(--panel);margin-bottom:10px;overflow:hidden}
+.api .row{display:flex;align-items:center;gap:13px;padding:10px 14px}
+.api .method{flex:none;width:60px;font-family:var(--mono);font-size:10.5px;font-weight:700;
+  text-align:center;border-radius:4px;padding:3px 0;letter-spacing:.3px}
+.m-GET{color:#1d4ed8;background:var(--accent-soft);border:1px solid #dfe9ff}
+.m-POST{color:#15803d;background:#f2faf4;border:1px solid #c9ead3}
+.m-DELETE{color:#b42318;background:#fef3f3;border:1px solid #f0d0d0}
+.api .path{font-family:var(--mono);font-size:12.5px;color:var(--text);flex:1;word-break:break-all}
+.api .desc{font-size:12px;color:var(--text-3)}
+.api .params{padding:0 14px 12px;font-size:12px;color:var(--text-2);border-top:1px solid var(--border)}
+.api .params code{font-family:var(--mono);font-size:11.5px;background:#f0f0f2;padding:1px 5px;border-radius:4px}
+
+/* ---------- 设置 ---------- */
+.set-card{border:1px solid var(--border);border-radius:6px;background:var(--panel);
+  padding:14px 20px;margin-bottom:13px}
+.set-card h3{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);
+  margin:0 0 8px;font-weight:500}
+.set-row{display:grid;grid-template-columns:200px 1fr;gap:6px 16px;font-size:13px;
+  padding:7px 0;border-bottom:1px solid #f2f2f3}
+.set-row:last-child{border-bottom:none}
+.set-row .k{color:var(--text-3)}
+.set-row .v{color:var(--text);word-break:break-all}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:880px){
+  .app{grid-template-columns:64px 1fr}
+  .brand{padding:16px 8px;justify-content:center}
+  .brand .mark{margin:0}
+  .brand .name,.brand .desc,.nav a span,.nav .group,.sidebar .foot{display:none}
+  .nav a{justify-content:center;padding:10px}
+  .nav a.active::before{left:-8px}
+  .section{padding:18px 14px}
+  .chat-page{padding:0 14px 12px}
+  .es-chips{grid-template-columns:1fr}
+  .set-row{grid-template-columns:110px 1fr}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ================= 侧栏 ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">Q</div>
+      <div>
+        <div class="name">QueryNest</div>
+        <div class="desc">Document Intelligence &amp; RAG</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="group">工作区</div>
+      <a href="#/chat" data-view="chat">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Chat</span>
+      </a>
+      <a href="#/documents" data-view="documents">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+        <span>Documents</span>
+      </a>
+      <a href="#/evaluation" data-view="evaluation">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+        <span>Evaluation</span>
+      </a>
+      <a href="#/api" data-view="api">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        <span>API</span>
+      </a>
+      <a href="#/settings" data-view="settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </a>
+    </nav>
+    <div class="foot">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="8" y1="2" x2="8" y2="22"/></svg>
+      <span><span class="mono">127.0.0.1:9621</span></span>
+    </div>
+  </aside>
+
+  <!-- ================= 主内容区 ================= -->
+  <main class="main">
+
+    <!-- Chat -->
+    <section id="view-chat" class="chat-page" hidden>
+      <div class="topbar">
+        <div>
+          <h1>Chat</h1>
+          <div class="sub">基于已入库文档的检索增强问答</div>
+        </div>
+      </div>
+
+      <div class="thread" id="thread">
+        <div class="empty-state" id="empty">
+          <div class="es-logo">Q</div>
+          <h2>你好，我是 QueryNest</h2>
+          <p>基于文档库检索作答，并附引用来源。输入问题或从下方示例开始。</p>
+          <div class="es-chips">
+            <button class="chip" data-q="总结这份文档">总结这份文档</button>
+            <button class="chip" data-q="查找关键数据">查找关键数据</button>
+            <button class="chip" data-q="比较两份文档">比较两份文档</button>
+            <button class="chip" data-q="解释这张图表">解释这张图表</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <textarea id="q" rows="2" placeholder="输入问题，例如：表格中哪个模型效果最好？"></textarea>
+        <div class="cbar">
+          <input type="file" id="img" accept="image/*" hidden>
+          <button class="attach" id="imgbtn" title="附加图片">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            附件
+          </button>
+          <select id="mode" title="检索模式">
+            <option value="mix">混合检索</option>
+            <option value="multimodal">多模态问答</option>
+          </select>
+          <span class="hint-hint thin" id="imgname"></span>
+          <span style="flex:1"></span>
+          <button class="btn primary sm" id="send">发送</button>
+        </div>
+        <div class="hint-hint" style="padding:6px 2px 0"><span class="thin">Enter 发送 · Shift+Enter 换行</span></div>
+      </div>
+    </section>
+
+    <!-- Documents -->
+    <section id="view-documents" class="section" hidden>
+      <div class="topbar">
+        <div>
+          <h1>Documents</h1>
+          <div class="sub">知识库 · 已入库文档的管理</div>
+        </div>
+        <div class="actions">
+          <input type="file" id="docfile" hidden>
+          <button class="btn primary" id="docpick">上传</button>
+        </div>
+      </div>
+      <p id="upstatus"></p>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>文件名</th><th>状态</th><th>类型</th><th>内容类型</th><th>页数</th><th>更新时间</th><th style="width:70px">操作</th>
+          </tr></thead>
+          <tbody id="docbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Evaluation -->
+    <section id="view-evaluation" class="section" hidden>
+      <div class="topbar">
+        <div><h1>Evaluation</h1><div class="sub" id="eval-sub">检索指标结果</div></div>
+        <div class="actions"><button class="btn" id="eval-reload">刷新</button></div>
+      </div>
+      <div id="eval-body"></div>
+    </section>
+
+    <!-- API -->
+    <section id="view-api" class="section" hidden>
+      <div class="topbar">
+        <div><h1>API</h1><div class="sub">QueryNest 对外提供的基础服务接口</div></div>
+      </div>
+      <div id="api-body"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="section" hidden>
+      <div class="topbar">
+        <div><h1>Settings</h1><div class="sub">运行配置 · 来自环境变量 / .env</div></div>
+      </div>
+      <div id="settings-body"></div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ---------- 工具 ---------- */
+const $=s=>document.querySelector(s);
+const el=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtPerc=v=> v==null||isNaN(v)? '—' : (v*100).toFixed(1)+'%';
+const fmtTime=t=> t? String(t).replace('T',' ').slice(0,16) : '—';
+const kv=(k,vs)=>'<div class="kv"><dt>'+esc(k)+'</dt><dd>'+esc(vs)+'</dd></div>';
+
+/* ---------- Markdown 渲染（轻量、无依赖、默认转义防注入） ---------- */
+function mdInline(raw){
+  let s=esc(raw);
+  s=s.replace(/`([^`\n]+)`/g,(m,c)=>'<code>'+c+'</code>');
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,(m,p,c)=>(p||'')+'<em>'+c+'</em>');
+  s=s.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,(m,t,u)=>'<a href="'+u+'" target="_blank" rel="noopener">'+t+'</a>');
+  return s;
+}
+function md(src){
+  if(!src) return '';
+  const lines=String(src).replace(/\r\n/g,'\n').split('\n');
+  let out=[],para=[],i=0;
+  const flush=()=>{ if(para.length){ out.push('<p>'+mdInline(para.join(' '))+'</p>'); para=[]; } };
+  while(i<lines.length){
+    const line=lines[i];
+    const fence=line.match(/^\s*(```+|~~~+)/);
+    if(fence){
+      flush(); const tok=fence[1][0]; let code=[]; i++;
+      while(i<lines.length && lines[i].trim().slice(0,tok.length)!==tok){ code.push(lines[i]); i++; }
+      i++;
+      out.push('<pre><code>'+esc(code.join('\n'))+'</code></pre>'); continue;
+    }
+    const h=line.match(/^(#{1,6})\s+(.*)/);
+    if(h){ flush(); const lvl=Math.min(h[1].length+1,6); out.push('<h'+lvl+'>'+mdInline(h[2])+'</h'+lvl+'>'); i++; continue; }
+    if(/^>\s?/.test(line)){ flush(); const q=[]; while(i<lines.length&&/^>\s?/.test(lines[i])){ q.push(lines[i].replace(/^>\s?/,'')); i++; } out.push('<blockquote>'+mdInline(q.join(' '))+'</blockquote>'); continue; }
+    if(/^\s*[-*+]\s+/.test(line)){
+      flush(); const li=[]; while(i<lines.length&&/^\s*[-*+]\s+/.test(lines[i])){ li.push('<li>'+mdInline(lines[i].replace(/^\s*[-*+]\s+/,''))+'</li>'); i++; } out.push('<ul>'+li.join('')+'</ul>'); continue; }
+    if(/^\s*\d+[.)]\s+/.test(line)){
+      flush(); const li=[]; while(i<lines.length&&/^\s*\d+[.)]\s+/.test(lines[i])){ li.push('<li>'+mdInline(lines[i].replace(/^\s*\d+[.)]\s+/,''))+'</li>'); i++; } out.push('<ol>'+li.join('')+'</ol>'); continue; }
+    if(line.trim()===''){ flush(); i++; continue; }
+    para.push(line); i++;
+  }
+  flush();
+  return out.join('');
+}
+
+/* ---------- 路由 ---------- */
+const views=['chat','documents','evaluation','api','settings'];
+function showView(name){
+  if(!views.includes(name)) name='chat';
+  views.forEach(v=>{el('view-'+v).hidden=(v!==name);});
+  document.querySelector('.main').scrollTop=0; // 切换页面回顶部
+  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===name));
+  if(name==='chat') el('q').focus();
+  if(name==='documents') reloadDocs();
+  if(name==='evaluation') loadEval();
+  if(name==='settings') loadSettings();
+}
+document.querySelectorAll('.nav a').forEach(a=>a.addEventListener('click',e=>{
+  history.replaceState(null,'',a.getAttribute('href')); showView(a.dataset.view);
+}));
+function route(){showView((location.hash||'#/chat').replace('#/',''));}
+window.addEventListener('hashchange',route);
+
+/* ============ Chat ============ */
+const thread=el('thread'),emptyState=el('empty');
+function clearEmpty(){ if(emptyState&&emptyState.parentNode) emptyState.remove(); }
+function addTurn(){clearEmpty();
+  const t=document.createElement('div');t.className='turn assist';
+  const h=document.createElement('div');h.className='mhead';
+  const d=document.createElement('div');d.className='dot';d.textContent='Q';
+  const n=document.createElement('span');n.textContent='QueryNest';
+  h.appendChild(d);h.appendChild(n);t.appendChild(h);
+  const ans=document.createElement('div');ans.className='answer';
+  t.appendChild(ans);thread.appendChild(t);
+  return ans;
+}
+async function send(){
+  const q=el('q').value.trim(); if(!q) return;
+  const mode=el('mode').value;
+  const u=document.createElement('div');u.className='turn user';
+  const uq=document.createElement('div');uq.className='q';uq.textContent=q;
+  u.appendChild(uq);thread.appendChild(u);
+  clearEmpty(); el('q').value=''; el('imgname').textContent='';
+
+  const ans=addTurn();
+  let status=document.createElement('div');status.className='answer';status.style.color='var(--text-3)';
+  status.textContent='正在检索并生成回答…';ans.parentNode.insertBefore(status,ans.nextSibling);
+
+  let payload,url;
+  if(mode==='multimodal'){
+    url='/query/multimodal'; const img=el('img').files[0]; let content=[];
+    if(img){
+      status.textContent='正在读取图片…';
+      const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>res('');r.readAsDataURL(img);});
+      content=[{type:'image',content:b64}];
+    }
+    payload={query:q,mode:'mix',content};
+  }else{
+    url='/query'; payload={query:q,mode:'mix',top_k:20};
+  }
+  status.textContent='正在检索并生成回答…';
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await r.json();
+    if(!r.ok){
+      const msg=(data&&data.detail)||(data&&data.error)||('请求失败 '+r.status);
+      status.remove();
+      ans.innerHTML='<div class="err">'+esc(typeof msg==='string'?msg:JSON.stringify(msg))+'</div>';
+      wrapScroll();return;
+    }
+    status.remove();
+    const text=data.answer||'（该问题没有返回答案，可能是接口临时限流，请稍后重试）';
+    ans.innerHTML=md(text);
+    renderMeta(ans.parentNode,data);
+  }catch(e){
+    status.remove();
+    ans.innerHTML='<div class="err">'+esc(e.message||e)+'</div>';
+  }
+  wrapScroll();
+}
+function renderMeta(turn,data){
+  const src=data.sources||[],ret=data.retrieval||{},meta=data.metadata||{};
+  if(src.length){
+    const d=document.createElement('details');d.className='collap';d.open=src.length<=3;
+    const s=document.createElement('summary');s.innerHTML='Sources <span class="cnt">'+src.length+'</span>';
+    d.appendChild(s);
+    const dw=document.createElement('div');dw.className='dbox';
+    src.forEach((c,i)=>{
+      const it=document.createElement('div');it.className='src-item';
+      const n=document.createElement('div');n.className='n';n.textContent=i+1;
+      const m=document.createElement('div');m.className='meta';
+      const doc=esc(c.document||c.document_id||c.source||'未知');
+      const typ=c.type&&c.type!=='text'? '<span class="tag">'+esc(c.type)+'</span>':'';
+      const pg=c.page>0? ' · Page '+c.page:'';
+      const sc=c.score!=null? ' · '+Number(c.score).toFixed(3):'';
+      m.innerHTML='<span class="doc">'+doc+'</span>'+typ+'<span class="thin">'+pg+sc+'</span><div class="ex">'+esc(c.text||'')+'</div>';
+      it.appendChild(n);it.appendChild(m);dw.appendChild(it);
+    });
+    d.appendChild(dw);turn.appendChild(d);
+  }
+  if(ret||meta){
+    const d=document.createElement('details');d.className='collap';
+    const s=document.createElement('summary');s.textContent='Retrieval Details';d.appendChild(s);
+    const dw=document.createElement('div');dw.className='dbox';
+    const rows=[];
+    if(meta.intent!=null) rows.push(kv('intent',meta.intent));
+    if(meta.rewritten!=null&&meta.rewritten!==false) rows.push(kv('rewritten',meta.rewritten));
+    if(meta.mode!=null) rows.push(kv('mode',meta.mode));
+    if(ret.num_hits!=null) rows.push(kv('hits',ret.num_hits));
+    if(ret.router!=null) rows.push(kv('router',ret.router));
+    if(ret.timing) rows.push(kv('timing',JSON.stringify(ret.timing)));
+    if(meta.faithfulness!=null) rows.push(kv('faithfulness',meta.faithfulness));
+    if(meta.query_fingerprint) rows.push(kv('query_fingerprint',meta.query_fingerprint));
+    if(!rows.length) rows.push(kv('detail',JSON.stringify(Object.assign({},ret,meta))));
+    dw.innerHTML=rows.join('');d.appendChild(dw);turn.appendChild(d);
+  }
+}
+function wrapScroll(){thread.scrollTop=thread.scrollHeight;}
+
+document.querySelectorAll('.chip[data-q]').forEach(c=>c.addEventListener('click',()=>{
+  el('q').value=c.dataset.q; el('q').focus(); send();
+}));
+el('imgbtn').addEventListener('click',()=>el('img').click());
+el('img').addEventListener('change',()=>{
+  const f=el('img').files[0]; el('imgname').textContent=f? '已附加 '+f.name : '';
+});
+el('send').addEventListener('click',send);
+el('q').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}
+});
+
+/* ============ Documents ============ */
+const docbody=el('docbody');
+async function reloadDocs(){
+  docbody.innerHTML='<tr><td colspan="7" class="empty">加载文档列表…</td></tr>';
+  try{
+    const r=await fetch('/documents');const data=await r.json();
+    const list=(data&&data.documents)||[];
+    if(!list.length){docbody.innerHTML='<tr><td colspan="7" class="empty">暂无文档。点击右上角「上传」加入第一个文件。</td></tr>';return;}
+    let rows='';
+    list.forEach(d=>{
+      const fname=d.filename||d.document_name||d.document_id;
+      const st=d.status||'processed';
+      const badge=st==='processed'||st==='done'?'<span class="badge ok">就绪</span>':'<span class="badge pending">'+esc(st)+'</span>';
+      const type=d.file_type||d.type||'—';
+      const ct=(d.content_types||[]).length? d.content_types.join(', '):(d.content_type||'—');
+      const pages=d.page_count!=null? d.page_count:'—';
+      const time=fmtTime(d.created_at||d.updated_at);
+      rows+='<tr><td class="fname">'+esc(fname)+'</td><td>'+badge+'</td>'+
+        '<td class="ftype">'+esc(type)+'</td><td>'+esc(ct)+'</td><td class="thin">'+pages+'</td>'+
+        '<td class="thin">'+time+'</td>'+
+        '<td><button class="btn danger sm" data-del="'+esc(d.document_id)+'">删除</button></td></tr>';
+    });
+    docbody.innerHTML=rows;
+    docbody.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>delDoc(b.dataset.del,b)));
+  }catch(e){
+    docbody.innerHTML='<tr><td colspan="7" class="empty">加载失败：'+esc(e.message||e)+'</td></tr>';
+  }
+}
+async function delDoc(id,btn){
+  if(!confirm('确定删除文档 '+id+' 吗？')) return;
+  btn.disabled=true;
+  try{await fetch('/documents/'+encodeURIComponent(id),{method:'DELETE'});}catch(err){alert('删除出错：'+err.message);}
+  reloadDocs();
+}
+const docfile=el('docfile'),docpick=el('docpick'),upstatus=el('upstatus');
+docpick.addEventListener('click',()=>docfile.click());
+docfile.addEventListener('change',async()=>{
+  const f=docfile.files[0]; if(!f) return;
+  docpick.textContent='解析中…'; docpick.disabled=true;
+  upstatus.textContent='正在解析并入库，可能要几分钟（PDF 较久）…';
+  try{
+    const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(f);});
+    const rr=await fetch('/documents/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:f.name,content:b64})});
+    const data=await rr.json();
+    if(!rr.ok){upstatus.textContent='入库失败：'+esc(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail||data));return;}
+    upstatus.textContent='入库成功：'+f.name; reloadDocs();
+  }catch(e){upstatus.textContent='入库失败：'+esc(e.message||e);}
+  finally{docpick.textContent='上传'; docpick.disabled=false; docfile.value='';}
+});
+
+/* ============ Evaluation ============ */
+const evalBody=el('eval-body'),evalSub=el('eval-sub');
+async function loadEval(){
+  evalBody.innerHTML='<div class="empty">加载评估结果…</div>';
+  try{
+    const r=await fetch('/api/evaluation');const d=await r.json();
+    if(d&&d.error){evalBody.innerHTML='<div class="err">'+esc(d.error)+'</div>';return;}
+    const m=d.metrics||{};
+    const order=[['recall@5','召回@5'],['recall@10','召回@10'],['precision@5','精确率@5'],['precision@10','精确率@10'],['mrr@10','MRR@10'],['ndcg@10','NDCG@10'],['faithfulness','忠实度'],['answer_relevancy','答案相关性']];
+    let tiles='';
+    order.forEach(([key,label])=>{ if(!(key in m))return; const v=m[key]; tiles+='<div class="metric"><div class="k">'+label+'</div><div class="v'+(v==null?' dim':'')+'">'+fmtPerc(v)+'</div></div>'; });
+    const ds=d.dataset||'—',num=d.num_examples||0,k=d.top_k||10,g=d.generated_at||'—';
+    evalSub.textContent='检索指标 · 数据集 '+ds;
+    let html='<div class="meta-line">'+'<span><span class="thin">数据集</span> '+esc(ds)+'</span>'+
+      '<span><span class="thin">Query 数</span> '+num+'</span>'+
+      '<span><span class="thin">top_k</span> '+k+'</span>'+
+      '<span><span class="thin">生成时间</span> '+esc(g)+'</span></div>';
+    html+='<div class="metrics">'+tiles+'</div>';
+    const rows=(d.results||[]);
+    if(rows.length){
+      html+='<h2>逐题结果</h2>';
+      html+='<div class="table-wrap"><table class="tbl"><thead><tr><th>问题</th><th>R@5</th><th>R@10</th><th>P@5</th><th>MRR@10</th><th>NDCG@10</th><th>忠实度</th></tr></thead><tbody>';
+      rows.forEach(q=>{ html+='<tr><td>'+esc(q.question||'')+'</td><td>'+fmtPerc(q['recall@5'])+'</td><td>'+fmtPerc(q['recall@10'])+'</td><td>'+fmtPerc(q['precision@5'])+'</td><td>'+fmtPerc(q['mrr@10'])+'</td><td>'+fmtPerc(q['ndcg@10'])+'</td><td>'+fmtPerc(q.faithfulness)+'</td></tr>'; });
+      html+='</tbody></table></div>';
+    }else{ html+='<div class="empty">无逐题记录</div>'; }
+    evalBody.innerHTML=html;
+  }catch(e){evalBody.innerHTML='<div class="err">加载评估失败：'+esc(e.message||e)+'</div>';}
+}
+el('eval-reload').addEventListener('click',loadEval);
+
+/* ============ API ============ */
+const apis=[
+  {m:'GET',path:'/health',desc:'健康检查：服务与引擎状态',p:''},
+  {m:'GET',path:'/documents',desc:'列出所有已入库文档',p:''},
+  {m:'POST',path:'/documents',desc:'按文件路径入库 / 上传',p:'<code>path</code> 必填，可选 <code>parse_method</code>、<code>document_id</code>'},
+  {m:'POST',path:'/documents/upload',desc:'直接上传文件（base64）',p:'<code>filename</code>、<code>content</code>(base64) 必填'},
+  {m:'GET',path:'/documents/{id}',desc:'获取单个文档详情',p:'<code>id</code> 文档编号'},
+  {m:'DELETE',path:'/documents/{id}',desc:'删除文档（含元数据与缓存来源）',p:'<code>id</code> 文档编号'},
+  {m:'POST',path:'/query',desc:'检索增强问答',p:'<code>query</code> 必填；可选 <code>mode</code>、<code>top_k</code>、<code>history</code>'},
+  {m:'POST',path:'/query/multimodal',desc:'多模态问答（可附图片）',p:'<code>query</code> 必填；<code>content</code> 为图片数组'},
+  {m:'GET',path:'/api/evaluation',desc:'获取评估指标（Recall/MRR/Precision/NDCG）',p:''},
+  {m:'GET',path:'/api/settings',desc:'获取运行配置（不含明文密钥）',p:''},
+];
+function loadApi(){
+  let html=apis.map(a=>{
+    const cls='m-'+a.m;
+    return '<div class="api"><div class="row">'+
+      '<span class="method '+cls+'">'+a.m+'</span>'+
+      '<span class="path">'+a.path+'</span>'+
+      '<span class="desc">'+a.desc+'</span>'+
+      '<button class="btn ghost sm copy" data-c="'+(a.m+' '+a.path)+'">复制</button>'+
+    '</div>'+(a.p?'<div class="params"><span class="thin">Params</span>&nbsp;&nbsp;'+a.p+'</div>':'')+'</div>';
+  }).join('');
+  el('api-body').innerHTML=html;
+  document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>{
+    navigator.clipboard&&navigator.clipboard.writeText(b.dataset.c);b.textContent='已复制';
+    setTimeout(()=>{b.textContent='复制';},1500);
+  }));
+}
+
+/* ============ Settings ============ */
+async function loadSettings(){
+  const box=el('settings-body');
+  box.innerHTML='<div class="empty">加载配置…</div>';
+  try{
+    const r=await fetch('/api/settings');const d=await r.json();
+    if(!r.ok||d.error){box.innerHTML='<div class="err">'+esc(d.error||d.detail||('请求失败 '+r.status))+'</div>';return;}
+    const row=(k,v)=>'<div class="set-row"><span class="k">'+esc(k)+'</span><span class="v">'+esc(v==null?'—':v)+'</span></div>';
+    let h='<div class="set-card"><h3>模型</h3>'
+      +row('LLM 模型',d.llm_model)+row('Embedding 模型',d.embedding_model)+row('Embedding 维度',d.embedding_dim)
+      +row('Vision 模型',d.vision_model)+row('Reranker 模型',d.reranker_model||'（未启用）')+row('Rerank 开关',d.enable_rerank?'开启':'关闭')
+      +row('API Key',d.api_key_masked?('已配置 · ***'+d.api_key_masked):'未配置')+'</div>';
+    h+='<div class="set-card"><h3>接口与解析</h3>'
+      +row('LLM Base URL',d.llm_base_url)+row('LLM Temperature',d.llm_temperature)
+      +row('解析器',d.parser+' / '+d.parse_method)+'</div>';
+    h+='<div class="set-card"><h3>目录与地址</h3>'
+      +row('工作目录',d.working_dir)+row('存储目录',d.storage_dir)+row('解析输出',d.parser_output_dir)
+      +row('服务地址',d.api_host+':'+d.api_port)+'</div>';
+    h+='<p class="small thin">配置读取自环境变量 / .env 文件。修改后需重启 <span class="mono">querynest serve</span> 生效。</p>';
+    box.innerHTML=h;
+  }catch(e){box.innerHTML='<div class="err">加载配置失败：'+esc(e.message||e)+'</div>';}
+}
+
+/* ---------- 启动 ---------- */
+route();
+loadApi();
+</script>
+</body>
+</html>

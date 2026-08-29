@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "querynest"
+dynamic = ["version"]
+authors = [
+    {name = "QueryNest Team"},
+    {name = "Zirui Guo"},  # 原 RAG-Anything 作者（继承底层能力的来源，保留署名）
+]
+description = "QueryNest — Multimodal Document Intelligence & RAG (fork of RAG-Anything)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# 继承自原 RAG-Anything 的底层运行时依赖
+dependencies = [
+    "huggingface_hub",
+    "lightrag-hku<1.5",
+    "mineru[core]>=3.4.1",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+image = ["Pillow>=10.0.0"]
+text = ["reportlab>=4.0.0"]
+office = []  # Requires LibreOffice (external program)
+paddleocr = [
+    "paddleocr>=2.7.0",
+    "pypdfium2>=4.25.0",
+]
+markdown = [
+    "markdown>=3.4.0",
+    "weasyprint>=60.0",
+    "pygments>=2.10.0",
+]
+# QueryNest 新增：API 服务
+api = [
+    "fastapi>=0.110",
+    "uvicorn>=0.20",
+    "pydantic>=2.0",
+]
+# QueryNest 新增：可选的增强重排器
+reranker = [
+    "flagembedding",  # 或 sentence-transformers
+]
+dev = [
+    "pytest>=6.0",
+    "pytest-asyncio",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+    "openai",
+    "python-dotenv",
+]
+all = [
+    "Pillow>=10.0.0",
+    "reportlab>=4.0.0",
+    "paddleocr>=2.7.0",
+    "pypdfium2>=4.25.0",
+    "markdown>=3.4.0",
+    "weasyprint>=60.0",
+    "pygments>=2.10.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.20",
+]
+
+[project.scripts]
+querynest = "querynest.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/QueryNest/QueryNest"
+Issues = "https://github.com/HKUDS/RAG-Anything/issues"
+# 来源：本项目 fork 自 HKUDS/RAG-Anything，遵守其 MIT License。
+Upstream = "https://github.com/HKUDS/RAG-Anything"
+
+[tool.setuptools.packages.find]
+include = ["querynest*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "querynest.__version__"}
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test*.py"]
+# tests/legacy 存放从旧 RAG-Anything 继承的测试（依赖可选重型组件），默认不运行
+norecursedirs = ["examples", "legacy"]

@@ -1,0 +1,17 @@
+[
+  {
+    "question": "在表2的对比中，哪个模型的准确率最高？",
+    "expected_answer": "BERT 在表2中准确率最高。",
+    "expected_sources": ["paper.pdf:table2", "paper.pdf:page4"]
+  },
+  {
+    "question": "图3所示架构的输入形态是什么？",
+    "expected_answer": "图3架构的输入是原始文本。",
+    "expected_sources": ["paper.pdf:figure3"]
+  },
+  {
+    "question": "文中给出的损失函数公式包含哪几项？",
+    "expected_answer": "损失函数由交叉熵与正则项组成。",
+    "expected_sources": ["paper.pdf:equation1"]
+  }
+]
