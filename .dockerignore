@@ -1,0 +1,45 @@
+# Secrets — NEVER baked into the image
+.env
+.env.local
+.env.*.local
+**/*.env
+
+# VCS
+.git
+.gitignore
+.github
+
+# Python caches / build
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+dist
+build
+.venv
+env/
+venv/
+
+# Data & storage (mounted at runtime, not baked in)
+querynest_storage*/
+querynest_output*/
+rag_storage*/
+inputs/
+parsed/
+mineru/
+output*/
+evaluation/results.json
+eval_out.json
+testdata/
+examples/input/
+examples/output/
+input_docs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
