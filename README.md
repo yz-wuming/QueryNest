@@ -58,36 +58,7 @@ QueryNest 面向 PDF、Office 文档、图片、表格、公式等复杂文档�
 
 ## Architecture
 
-一次查询的完整流程：
-
-```
-User Query
-    ↓
-Query Analyzer
-    ↓
-Query Rewrite
-    ↓
-┌──────────────────────────────┐
-│  Hybrid Retrieval            │
-│  Dense + BM25 + Graph        │
-└──────────────────────────────┘
-    ↓
-RRF Fusion
-    ↓
-去重（Deduplication）
-    ↓
-可选 Reranker
-    ↓
-Context Builder
-    ↓
-LLM / VLM
-    ↓
-Citation
-    ↓
-Answer + Sources
-```
-
-查询链路遵循“分析 → 改写 → 多路召回 → 融合 → 重排 → 构造上下文 → 生成 → 引用”的编排，叠加 会话持久化 与 查询 Trace（可观测）能力。
+查询链路遵循“分析 → 改写 → 多路召回（Dense + BM25 + Graph）→ RRF 融合 → 去重 → 可选重排 → 构造上下文 → LLM/VLM 生成 → 引用 → 输出 Answer + Sources”的编排，叠加会话持久化与查询 Trace（可观测）能力。
 
 ---
 
