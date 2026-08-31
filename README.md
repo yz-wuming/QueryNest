@@ -6,7 +6,6 @@ QueryNest 面向 PDF、Office 文档、图片、表格、公式等复杂文档�
 
 传统 RAG 大多围绕纯文本设计，而真实文档往往同时包含正文、表格、图片、公式以及跨页结构。QueryNest 尝试把这些异构内容统一纳入检索与问答流程：文档进入后经过多模态解析与结构化索引，查询时通过混合检索召回多样内容，最终由 LLM/VLM 生成带可追踪来源的回答。
 
-本项目基于 [HKUDS RAG-Anything](https://github.com/HKUDS/RAG-Anything) 做产品化二次开发，保留原项目 License 与署名，并在其上新增 Query Analysis、Query Rewrite、Hybrid Retrieval、Citation、Model Registry、Provider Adapter、Evaluation、Trace、CLI 与 FastAPI 等工程能力。
 
 **技术标签**：`Python` · `FastAPI` · `LightRAG` · `MinerU` · `Docling` · `PaddleOCR` · `BM25` · `RRF` · `Reranker` · `VLM` · `RAG Evaluation`
 
