@@ -29,16 +29,32 @@ StopWords = set(
 )
 
 
+def _split_doc_page(raw: str) -> Tuple[str, int]:
+    """把期望源字符串拆成 (document_key, page)。
+
+    仅剥离明确的页码标记：``doc.pdf#4`` / ``doc.pdf# 4`` / ``doc.pdf — Page 4``。
+    注意：不得按裸数字截断文件名本身（如 ``ph7_readme_kb.txt`` 应整体保留）。
+    """
+    s = (raw or "").strip()
+    m = re.search(r"#\s*(\d+)\s*$", s)
+    if m:
+        return re.sub(r"#\s*\d+\s*$", "", s).strip(), int(m.group(1))
+    m2 = re.search(r"(?i)(?:[-–—]\s*|:\s*)?Page\s*#?\s*(\d+)\s*$", s)
+    if m2:
+        return (
+            re.sub(r"(?i)(?:[-–—]\s*|:\s*)?Page\s*#?\s*\d+\s*$", "", s).strip(),
+            int(m2.group(1)),
+        )
+    return s, 0
+
+
 def _norm_sources(expected_sources) -> List[Tuple[str, int]]:
     """把 expected_sources 归一化为 (document_key, page) 列表。"""
     out: List[Tuple[str, int]] = []
     for s in expected_sources or []:
         if isinstance(s, str):
             # 支持 "doc.pdf#4" / "doc.pdf — Page 4" 形式
-            m = re.search(r"#(\d+)", s)
-            page = int(m.group(1)) if m else 0
-            doc = re.sub(r"[#\d].*$", "", s).strip()
-            key = doc or s
+            key, page = _split_doc_page(s)
         elif isinstance(s, dict):
             doc = str(s.get("document") or s.get("document_name") or s.get("source") or "")
             page = int(s.get("page") or 0)

@@ -1,9 +1,11 @@
 include requirements.txt
 include README.md
-include README_zh.md
 include LICENSE
-recursive-include raganything *.py
 recursive-include examples *.py
+# Web UI 静态资源必须随包分发，否则安装后 `querynest serve` 找不到 index.html
+recursive-include querynest *.html
+recursive-include querynest *.css
+recursive-include querynest *.js
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude *.egg-info

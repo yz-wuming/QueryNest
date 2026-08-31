@@ -1,18 +1,27 @@
 huggingface_hub
 # LightRAG packages
-lightrag-hku
+# 注意：需与 pyproject.toml 保持一致（<1.5：1.5.x 起接口变动，本项目未适配）
+lightrag-hku<1.5
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 # >=3.4.1: earlier versions iterate pdftext's PageChars return value directly and
 # crash with "TypeError: 'PageChars' object is not iterable" against pdftext>=0.7
 mineru[core]>=3.4.1
 # Progress bars for batch processing
 tqdm
-# Note: Optional dependencies are now defined in setup.py extras_require:
-# - [image]: Pillow>=10.0.0 (for BMP, TIFF, GIF, WebP format conversion)
-# - [text]: reportlab>=4.0.0 (for TXT, MD to PDF conversion)
-# - [paddleocr]: paddleocr + pypdfium2 (for parser='paddleocr' - better OCR for scanned PDFs)
-# - [office]: requires LibreOffice (external program, not Python package)
-# - [all]: includes all optional dependencies
+# 说明：可选依赖现已统一定义在 pyproject.toml 的 [project.optional-dependencies]。
+# 本文件仅用于 `pip install -r requirements.txt` 的最小核心依赖场景。
 #
-# Install with: pip install raganything[image,text] or pip install raganything[all]
-# For best PDF handling: pip install raganything[paddleocr]
+# - [image]:     Pillow>=10.0.0  (BMP/TIFF/GIF/WebP 图片格式转换)
+# - [text]:      reportlab>=4.0.0 (TXT/MD 转 PDF)
+# - [paddleocr]: paddleocr + pypdfium2 (扫描版 PDF 的 OCR)
+# - [markdown]:  markdown + weasyprint + pygments
+# - [api]:       fastapi + uvicorn + pydantic (FastAPI 服务 / Web UI)
+# - [reranker]:  FlagEmbedding (BGE cross-encoder 重排，可选)
+# - [dev]:       pytest / black / isort / flake8 / mypy / openai / python-dotenv
+# - [office]:    需外部安装 LibreOffice（非 Python 包）
+#
+# 安装示例：
+#   pip install -e ".[api]"
+#   pip install -e ".[api,dev]"
+#   pip install -e ".[all]"
+# 最佳 PDF 效果：pip install -e ".[paddleocr]"

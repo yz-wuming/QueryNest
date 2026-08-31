@@ -6,7 +6,7 @@ Lite Text Parser — QueryNest 轻量文本解析器
 文本块，从而让「纯文本文档 → 索引 → 检索 → 回答 → 引用」的轻量端到端
 流程在零重型依赖下即可运行。
 
-这是 **QueryNest 新增**的解析器（不来自 RAG-Anything），通过 parser 注册表
+这是 **QueryNest 新增**的解析器，通过 parser 注册表
 以 ``"lite"`` 名称接入既有流水线，不修改 MinerU / Docling / PaddleOCR 的
 原始实现。
 
@@ -57,6 +57,9 @@ class LiteTextParser(Parser):
                 f"LiteTextParser 仅支持 {sorted(self.TEXT_FORMATS)}，收到 '{ext}'",
                 context={"file": str(path)},
             )
+
+        if ext == ".json":
+            return self.parse_json(path)
 
         text = self._read_text(path)
         chunks = self._split_paragraphs(text)

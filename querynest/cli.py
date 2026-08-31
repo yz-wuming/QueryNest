@@ -10,7 +10,7 @@ QueryNest 命令行接口
     querynest evaluate datasets/evalset.json
     querynest serve
 
-命令名统一为 ``querynest``，不再出现旧的 ``raganything``。
+命令名统一为 ``querynest``。
 """
 
 import argparse

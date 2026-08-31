@@ -2,7 +2,7 @@
 QueryNest 配置系统
 
 统一使用 ``QUERYNEST_`` 前缀的环境变量，并在未设置时回退读取旧的
-LIGHTRAG/RAG-Anything 变量名以保持对新老配置的兼容。
+兼容变量名（见 ``_LEGACY_MAP``）以保持对历史配置的兼容。
 
 本模块不依赖任何第三方库，可独立导入用于测试。
 """
@@ -51,9 +51,9 @@ def _env(name: str, default=None, cast=None):
 
 # 旧变量名回退映射：短名 -> 候选旧环境变量名
 _LEGACY_MAP = {
-    "WORKING_DIR": ["WORKING_DIR", "RAGANYTHING_WORKING_DIR"],
+    "WORKING_DIR": ["WORKING_DIR"],
     "PARSE_METHOD": ["PARSE_METHOD", "MINERU_PARSE_METHOD"],
-    "OUTPUT_DIR": ["OUTPUT_DIR"],
+    "OUTPUT_DIR": ["OUTPUT_DIR", "QUERYNEST_PARSER_OUTPUT_DIR", "PARSER_OUTPUT_DIR"],
     "PARSER": ["PARSER"],
     "DISPLAY_CONTENT_STATS": ["DISPLAY_CONTENT_STATS"],
     "ENABLE_IMAGE_PROCESSING": ["ENABLE_IMAGE_PROCESSING"],
@@ -95,7 +95,7 @@ _LEGACY_MAP = {
 
 
 DEFAULT_EXTENSIONS = (
-    ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md"
+    ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.json"
 )
 DEFAULT_WORKING_DIR = "./querynest_storage"
 
@@ -224,7 +224,7 @@ class QueryNestConfig:
 
     # ---- 兼容：旧属性别名 ----
     def __post_init__(self):
-        # 保持原 RAGAnythingConfig.working_dir / parse_method 兼容语义
+        # 保持 working_dir / storage_dir 的兼容语义
         if self.storage_dir == "./querynest_storage" and self.working_dir != DEFAULT_WORKING_DIR:
             self.storage_dir = self.working_dir
 

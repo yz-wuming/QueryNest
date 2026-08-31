@@ -65,14 +65,14 @@ def public_url_for_local_path(
 
 
 def _get_asset_env(name: str) -> str:
-    """读取 ``QUERYNEST_<NAME>`` 优先，未设置则回退到 ``RAGANYTHING_<NAME>``（兼容旧环境）。"""
-    return os.environ.get(f"QUERYNEST_{name}") or os.environ.get(f"RAGANYTHING_{name}") or ""
+    """读取 ``QUERYNEST_<NAME>`` 环境变量。"""
+    return os.environ.get(f"QUERYNEST_{name}", "")
 
 
 def attach_public_media_urls(item: dict) -> None:
     """
-    If ``QUERYNEST_PUBLIC_ASSET_BASE_URL`` (fallback ``RAGANYTHING_PUBLIC_ASSET_BASE_URL``)
-    and ``QUERYNEST_PUBLIC_ASSET_STRIP_PREFIX`` (fallback ``RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX``)
+    If ``QUERYNEST_PUBLIC_ASSET_BASE_URL``
+    and ``QUERYNEST_PUBLIC_ASSET_STRIP_PREFIX``
     are both set, add ``<field>_public_url`` for each non-empty media path field.
 
     Existing ``img_path`` / ``table_img_path`` / ``equation_img_path`` values

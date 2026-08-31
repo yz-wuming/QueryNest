@@ -36,10 +36,17 @@ log/
 .cache/
 .mypy_cache/
 .pytest_cache/
+.pytest_cache_*/
 .ruff_cache/
 .gradio/
 .history/
 temp/
+
+# Node / frontend build artifacts
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # IDE / Editor Files
 .idea/
@@ -53,13 +60,14 @@ neo4jWorkDir/
 # Data & Storage
 inputs/
 rag_storage*/
-querynest_storage/
-querynest_output/
+querynest_storage*/
+querynest_output*/
 examples/input/
 examples/output/
 output*/
 parsed/
 mineru/
+secrets.json
 
 # Miscellaneous
 .DS_Store
@@ -77,11 +85,16 @@ lightrag-dev/
 gui/
 tiktoken_cache/
 
-# unit-test files
-test_*
+# Ad-hoc throwaway test scripts at the repo ROOT only.
+# Scope to root so that the real test suite (tests/test_*.py) stays trackable.
+/test_*
+!/tests/
 
 # Cline files
 memory-bank/
+
+# Local tooling memory / workspace metadata
+.workbuddy/
 
 # AI
 .claude/
@@ -94,3 +107,27 @@ qn_*.py
 
 # Private / personal test corpus (not meant to be published)
 testdata/
+
+# Evaluation run output
+evaluation/results.json
+
+# Internal audit / working reports (not for publishing)
+BUG_REPORT.md
+CLEANUP_REPORT.md
+FILE_CLEANUP_AUDIT.md
+FRONTEND_REDESIGN_REPORT.md
+MODEL_SYSTEM_REPORT.md
+PROJECT_AUDIT.md
+SECURITY_AUDIT.md
+FINAL_ACCEPTANCE_REPORT.md
+FINAL_ACCEPTANCE_PROMPT.md
+PHASE_8_ACCEPTANCE_REPORT.md
+PHASE_9_TEST_REPORT.md
+FINAL_REPORTS/
+FINAL_TEST_RESULTS/
+PHASE_9_TEST_REPORT/
+QueryNest_Test_Suite/
+docs/devnotes/
+
+# 一次评测临时输出（被忽略，不入库）
+eval_out.json

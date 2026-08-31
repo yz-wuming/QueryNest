@@ -36,6 +36,10 @@ class DocumentNotFoundError(QueryNestError):
     """请求的文档在知识库中不存在。"""
 
 
+class ConversationNotFoundError(QueryNestError):
+    """请求的会话（Conversation）不存在。"""
+
+
 class RetrievalError(QueryNestError):
     """检索失败（向量 / 关键字 / 图任一路由异常）。"""
 

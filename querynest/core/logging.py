@@ -2,7 +2,7 @@
 QueryNest 统一日志
 
 所有 QueryNest 模块统一通过 ``get_logger`` 获取 logger，日志名称统一以
-``querynest`` 开头，避免出现旧 ``raganything`` 前缀。本模块无第三方依赖。
+``querynest`` 开头。本模块无第三方依赖。
 """
 
 import logging

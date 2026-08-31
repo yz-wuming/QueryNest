@@ -1,0 +1,27 @@
+# QueryNest — Docker Compose（单服务：FastAPI 后端 + 单文件前端）
+#
+# 注意：本机未安装 Docker，此文件按项目真实 Dockerfile（见同级 Dockerfile）编写，
+# 但尚未在本机实际 build/run 验证。使用前请在有 Docker 的环境执行：
+#   docker compose up --build
+#
+# 端口说明：
+#   - 容器内 FastAPI 监听 8080（见 Dockerfile：ENV QUERYNEST_API_PORT=8080 + uvicorn --port 8080）
+#   - 宿主端口 9621 映射到容器 8080（与本地 `querynest serve` 默认端口对齐）
+# 持久化：
+#   - 挂载宿主 ./querynest_storage 到容器 /data/querynest_storage（运行时存储/文档）
+# 密钥：
+#   - LLM API Key 等通过 .env 注入（先 cp .env.example .env 再填写）
+services:
+  querynest:
+    build: .
+    image: querynest:latest
+    container_name: querynest
+    ports:
+      - "9621:8080"
+    volumes:
+      - ./querynest_storage:/data/querynest_storage
+    environment:
+      - QUERYNEST_API_HOST=0.0.0.0
+      - QUERYNEST_API_PORT=8080
+      - QUERYNEST_STORAGE_DIR=/data/querynest_storage
+    restart: unless-stopped

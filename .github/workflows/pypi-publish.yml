@@ -1,4 +1,4 @@
-name: Upload RAGAnything Package
+name: Upload QueryNest Package
 
 on:
   release:

@@ -2,7 +2,7 @@
 QueryNest — Multimodal Document Intelligence & RAG
 
 QueryNest 是一个面向复杂文档的多模态 Retrieval-Augmented Generation (RAG) 系统。
-它继承并封装了原 RAG-Anything 的成熟底层能力（多模态解析、LightRAG 图检索、批处理、
+它继承并封装了成熟的底层能力（多模态解析、LightRAG 图检索、批处理、
 缓存），并新增 Query Analyzer / Query Rewrite / Hybrid Retrieval 编排 / Reranker /
 Citation / Context Builder / 文档管理 / 评测框架 / CLI / FastAPI 等产品级能力。
 
@@ -17,7 +17,7 @@ Citation / Context Builder / 文档管理 / 评测框架 / CLI / FastAPI 等产�
 
 __version__ = "2.0.0"
 __author__ = "QueryNest Team"
-__url__ = "https://github.com/querynest/QueryNest"
+__url__ = "https://github.com/QueryNest/QueryNest"
 
 # ---- 核心配置（无第三方依赖，恒可导入）------------------------------------
 from .core.config import QueryNestConfig as QueryNestConfig
@@ -29,6 +29,8 @@ from .core.models import (
     RetrievalResult as RetrievalResult,
     Citation as Citation,
     ContentType as ContentType,
+    Conversation as Conversation,
+    Message as Message,
 )
 from .core.exceptions import (
     QueryNestError as QueryNestError,
@@ -66,6 +68,9 @@ from .retrieval.context import (
 # ---- Storage / Evaluation / API（纯 Python 或轻依赖）----------------------
 from .storage.document_store import (
     DocumentStore as DocumentStore,
+)
+from .storage.conversation_store import (
+    ConversationStore as ConversationStore,
 )
 
 # ---- 原框架低层能力（解析器 / 回调 / 韧性 / 多语言提示词）------------------
@@ -139,6 +144,8 @@ __all__ = [
     "DocumentMetadata",
     "RetrievalResult",
     "Citation",
+    "Conversation",
+    "Message",
     # exceptions
     "QueryNestError",
     "DocumentParseError",
@@ -160,6 +167,7 @@ __all__ = [
     "ContextBuilder",
     # storage
     "DocumentStore",
+    "ConversationStore",
     # 原框架能力（存在才导出）
 ]
 

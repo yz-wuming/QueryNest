@@ -126,7 +126,7 @@ class Parser:
     # Define common file formats
     OFFICE_FORMATS = {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"}
     IMAGE_FORMATS = {".png", ".jpeg", ".jpg", ".bmp", ".tiff", ".tif", ".gif", ".webp"}
-    TEXT_FORMATS = {".txt", ".md"}
+    TEXT_FORMATS = {".txt", ".md", ".json"}
 
     # Class-level logger
     logger = logging.getLogger(__name__)
@@ -806,6 +806,86 @@ class Parser:
             "check_installation must be implemented by subclasses"
         )
 
+    def parse_json(
+        self,
+        file_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """把 JSON 文档展开为可检索的纯文本文块（不依赖任何重型解析库）。
+
+        ``.json`` 在本解析器中被当作结构化文本处理：遍历键值并把叶子值压平，
+        得到人可读的 ``key: value`` 文本，再切块供索引与检索使用。非法 JSON 抛
+        出 :class:`DocumentParseError`，不会静默当作 PDF 解析（避免 HTTP 500）。
+        """
+        del output_dir, lang, kwargs
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            from querynest.core.exceptions import DocumentParseError
+
+            raise DocumentParseError(
+                f"Invalid JSON: {exc}", context={"file": str(path)}
+            )
+        text = _json_to_text(data)
+        return [
+            {"type": "text", "text": chunk, "text_format": "plain", "page_idx": 0}
+            for chunk in _chunk_text(text)
+            if chunk.strip()
+        ]
+
+
+def _json_to_text(obj: Any, depth: int = 0) -> str:
+    """递归把 JSON 结构压平为 ``key: value`` 单行文本，便于检索。"""
+    if depth > 40:
+        return ""
+    if obj is None:
+        return ""
+    if isinstance(obj, bool):
+        return "true" if obj else "false"
+    if isinstance(obj, (int, float)):
+        return str(obj)
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, (list, tuple)):
+        return "\n".join(
+            part for part in (_json_to_text(v, depth + 1) for v in obj) if part
+        )
+    if isinstance(obj, dict):
+        lines = []
+        for key, value in obj.items():
+            val = _json_to_text(value, depth + 1)
+            lines.append(f"{key}: {val}" if val else f"{key}:")
+        return "\n".join(lines)
+    return str(obj)
+
+
+def _chunk_text(text: str, max_chars: int = 1200) -> List[str]:
+    """按行聚合为不超过 ``max_chars`` 的文本块（保留 JSON 结构可读性）。"""
+    text = text.strip()
+    if not text:
+        return []
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    chunks: List[str] = []
+    buf = ""
+    for line in lines:
+        if len(buf) + len(line) + 1 <= max_chars:
+            buf = (buf + "\n" + line) if buf else line
+        else:
+            if buf:
+                chunks.append(buf)
+            for i in range(0, len(line), max_chars):
+                chunks.append(line[i : i + max_chars])
+            buf = ""
+    if buf:
+        chunks.append(buf)
+    return chunks
+
 
 class MineruParser(Parser):
     """
@@ -1064,6 +1144,26 @@ class MineruParser(Parser):
             "-m",
             method,
         ]
+
+        # 解析 mineru 可执行文件绝对路径，避免依赖进程 PATH。
+        # 用 venv 的 python 启动服务时，mineru 位于解释器同目录（Scripts/bin）下，
+        # 直接裸命令 "mineru" 在 PATH 未包含该目录时会 FileNotFoundError。
+        _mineru_bin = shutil.which("mineru")
+        if not _mineru_bin:
+            import sys
+
+            _exe_dir = Path(sys.executable).parent
+            for _c in (
+                _exe_dir / "mineru.exe",
+                _exe_dir / "mineru",
+                _exe_dir / "Scripts" / "mineru.exe",
+                _exe_dir / "bin" / "mineru",
+            ):
+                if _c.is_file():
+                    _mineru_bin = str(_c)
+                    break
+        if _mineru_bin:
+            cmd[0] = _mineru_bin
 
         if backend:
             cmd.extend(["-b", backend])
@@ -1727,6 +1827,8 @@ class MineruParser(Parser):
                 f"MinerU 2.0 requires conversion to PDF first."
             )
             return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
+        elif ext == ".json":
+            return self.parse_json(file_path, output_dir, lang, **kwargs)
         elif ext in self.TEXT_FORMATS:
             return self.parse_text_file(file_path, output_dir, lang, **kwargs)
         else:
@@ -1924,6 +2026,8 @@ class DoclingParser(Parser):
                 return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
             elif ext in self.HTML_FORMATS:
                 return self.parse_html(file_path, output_dir, lang, **kwargs)
+            elif ext == ".json":
+                return self.parse_json(file_path, output_dir, lang, **kwargs)
             else:
                 raise ValueError(
                     f"Unsupported file format: {ext}. "
@@ -2675,6 +2779,8 @@ class PaddleOCRParser(Parser):
             return self.parse_image(file_path, output_dir, lang=lang, **kwargs)
         if ext in self.OFFICE_FORMATS:
             return self.parse_office_doc(file_path, output_dir, lang=lang, **kwargs)
+        if ext == ".json":
+            return self.parse_json(file_path, output_dir, lang=lang, **kwargs)
         if ext in self.TEXT_FORMATS:
             return self.parse_text_file(file_path, output_dir, lang=lang, **kwargs)
 

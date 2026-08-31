@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import inspect
+import re
 from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from lightrag.utils import logger
@@ -266,20 +267,37 @@ def separate_content(
 
 def encode_image_to_base64(image_path: str) -> str:
     """
-    Encode image file to base64 string
+    Encode an image to a base64 string.
+
+    兼容三种输入：文件路径 / ``data:`` URL / 已是 base64 的内容。
+    当传入的已是 base64 内容时原样返回，避免把 base64 误当成文件路径
+    去 ``open()`` 读取（前端“多模态问答”正是通过 content 字段以纯
+    base64 提交图片）。
 
     Args:
-        image_path: Path to the image file
+        image_path: Image file path, ``data:`` URL, or raw base64 content.
 
     Returns:
-        str: Base64 encoded string, empty string if encoding fails
+        str: Base64 encoded string, empty string if encoding fails.
     """
+    src = (image_path or "").strip()
+    if not src:
+        return ""
+    if src.startswith("data:"):
+        src = src.split(",", 1)[1] if "," in src else src
+    # 已是标准 base64 内容（较长且仅含 base64 字符集）→ 原样使用
+    if (
+        len(src) >= 32
+        and len(src) % 4 == 0
+        and re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", src)
+    ):
+        return src
     try:
-        with open(image_path, "rb") as image_file:
+        with open(src, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
         return encoded_string
     except Exception as e:
-        logger.error(f"Failed to encode image {image_path}: {e}")
+        logger.error(f"Failed to encode image {src}: {e}")
         return ""
 
 

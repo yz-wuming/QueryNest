@@ -1,5 +1,5 @@
 <!--
-Thanks for contributing to RAGAnything!
+Thanks for contributing to QueryNest!
 
 Please ensure your pull request is ready for review before submitting.
 

@@ -1,59 +1,9 @@
-QueryNest Multimodal RAG — Sample Document
+QueryNest 是一个多模态文档 RAG 系统。
 
-This is a lightweight, locally-authored sample document used to exercise the
-QueryNest end-to-end ingestion, retrieval and citation pipeline without any
-external copyrighted PDF.
+混合检索（Hybrid Retrieval）包含以下主要召回路径：
+1. Dense：向量检索（LightRAG local 模式）
+2. Keyword：纯 Python BM25 关键词检索
+3. Graph：知识图谱检索（LightRAG global 模式）
 
-1. Architecture Overview
-
-QueryNest is a multimodal Retrieval-Augmented Generation (RAG) system for
-complex documents. The processing pipeline is:
-
-  Document -> Parsing -> Multimodal Understanding -> Indexing
-  -> Hybrid Retrieval -> Reranking -> Context Construction -> LLM/VLM -> Citation
-
-The pipeline is intentionally layered: ingestion, multimodal analysis,
-retrieval, query, storage and API are maintained as separated modules so that
-each stage can be tuned and tested independently.
-
-2. Hybrid Retrieval
-
-QueryNest combines three retrieval signals before answering:
-
-  * Dense retrieval over vector embeddings of text chunks;
-  * Keyword (BM25) retrieval over the source text;
-  * Knowledge-graph retrieval from the LightRAG graph index.
-
-The candidate sets from the three routes are fused with Reciprocal Rank
-Fusion (RRF), then duplicate chunks are removed and the survivors are
-re-ranked before being assembled into the final context window.
-
-3. Reranking
-
-A reranker re-orders the fused candidates so that the most relevant passages
-appear first. QueryNest defines a BaseReranker abstraction with a NoopReranker
-(no-op, order preserved) and an optional cross-encoder based implementation.
-Reranking can be toggled by configuration and falls back to the no-op when no
-local reranker model is available.
-
-4. Citation
-
-Every answer can reference its evidence. Retrieval hits carry source metadata
-(document id, document name, page, content type and score), and the citation
-system normalizes, de-duplicates and numbers them as [1], [2], [3] so the
-final answer can point back to the exact document and page it is based on.
-
-5. Document Management
-
-A document store tracks every ingested file with a unified metadata record:
-document id, filename, file type, parser, parse method and content types.
-Documents can be listed, inspected, deleted and checked for existence, which
-makes the knowledge base manageable rather than a black box.
-
-6. Summary
-
-QueryNest turns raw documents into answerable knowledge: parse, understand
-text/images/tables/equations, index, retrieve with multiple signals, rerank,
-build context and answer with citations. To keep this snippet short, it only
-demonstrates the core text path; the full system also supports multimodal
-content.
+多路召回结果通过 RRF（Reciprocal Rank Fusion）融合，随后去重、可选重排，
+最终构造上下文，供 LLM 生成带可引用来源的回答。

@@ -105,6 +105,23 @@ class BGEReranker(BaseReranker):
         self._model = None
         self._backend = None
 
+    @classmethod
+    def available(cls) -> bool:
+        """是否具备运行 BGE 重排的后端（flagembedding 或 sentence-transformers）。
+
+        只做**可导入性探测**，不 import 也不加载模型权重，因此调用它不会触发
+        数百 MB 的 cross-encoder 下载；可用于 ``enable_rerank`` 开关判定。
+        """
+        import importlib.util
+
+        for mod in ("FlagEmbedding", "sentence_transformers"):
+            try:
+                if importlib.util.find_spec(mod) is not None:
+                    return True
+            except (ImportError, ValueError):
+                continue
+        return False
+
     def _load(self):
         if self._model is not None:
             return

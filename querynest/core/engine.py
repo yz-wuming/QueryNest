@@ -12,6 +12,7 @@ import asyncio
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -35,11 +36,12 @@ from querynest.query.rewrite import QueryRewriter, Turn
 from querynest.query.citation import CitationBuilder
 from querynest.query.base import QueryMixin
 from querynest.retrieval.reranker import BaseReranker, NoopReranker
-from querynest.retrieval.hybrid import HybridRetriever, FunctionRetriever
+from querynest.retrieval.hybrid import HybridRetriever, FunctionRetriever, BaseRetriever
 from querynest.retrieval.context import ContextBuilder as ContextBuilder_
 from querynest.ingestion.processor import ProcessorMixin
 from querynest.storage.document_store import DocumentStore
 from querynest.core.logging import get_logger
+from querynest.core.trace import trace_store
 
 
 class QueryNest:
@@ -73,16 +75,18 @@ class QueryNest:
         reranker: Optional[BaseReranker] = None,
         query_analyzer: Optional[QueryAnalyzer] = None,
         enable_rerank: bool = False,
+        model_registry: Any = None,
     ):
         self.config = config
         self.llm_model_func = llm_model_func
         self.vision_model_func = vision_model_func
         self.embedding_func = embedding_func
         self.lightrag_kwargs = lightrag_kwargs or {}
+        self.model_registry = model_registry
 
         # --- 继承的底层引擎 ---
         self._lightrag = lightrag
-        self._rag_engine = None  # 内部 RAG-Anything 兼容组合（延迟初始化）
+        self._rag_engine = None  # 内部 RAG 兼容组合（延迟初始化）
         self._parse_cache = None
         self._multimodal_status_cache = None
         self._modal_processors = {}
@@ -173,6 +177,7 @@ class QueryNest:
         top_k: int = 20,
         history: Optional[List[Dict[str, str]]] = None,
         system_prompt: Optional[str] = None,
+        model_id: Optional[str] = None,
         **kwargs,
     ) -> RetrievalResult:
         """统一查询入口。
@@ -192,16 +197,32 @@ class QueryNest:
         """
         await self._ensure_initialized()
 
+        _t0 = time.perf_counter()
+        trace = trace_store.new(query=query, mode=mode, model_id=model_id)
+        try:
+            reg = getattr(self, "model_registry", None)
+            _act = reg.active_model("chat") if reg is not None else None
+            trace.provider = getattr(_act, "provider", None)
+        except Exception:
+            trace.provider = None
+
         # 1) Query Analyzer
+        _s = time.perf_counter()
         intent = self.query_analyzer.classify(query)
+        trace.mark("query_analysis", metadata={"intent": intent.value}, start=_s)
         self.logger.info(f"Query intent: {intent.value}")
 
         # 2) Query Rewrite
+        _s = time.perf_counter()
         turns = []
         if history:
             for h in history:
                 turns.append(Turn(user=h.get("user", ""), assistant=h.get("assistant", "")))
         rewritten = self.query_rewriter.rewrite(query, history=turns)
+        trace.mark(
+            "query_rewrite", metadata={"rewritten": rewritten != query and rewritten or None},
+            start=_s,
+        )
         if rewritten != query:
             self.logger.info(f"Query rewritten: {query[:60]} -> {rewritten[:60]}")
 
@@ -213,13 +234,19 @@ class QueryNest:
 
         if use_vlm:
             # VLM 增强路径：走 LightRAG 检索 prompt 后替换图片
-            return await self._query_vlm_enhanced(
+            _s = time.perf_counter()
+            result = await self._query_vlm_enhanced(
                 rewritten, mode=mode, system_prompt=system_prompt, **kwargs
             )
+            trace.mark("vlm_enhanced", start=_s)
+            self._finish_trace(trace, result, _t0)
+            return result
 
         # 标准路径：HybridRetriever → Rerank → Context → LLM
         # 底层 dense/graph 检索器是 async 的，走 retrieve_async 拿到真实命中的列表。
+        _s = time.perf_counter()
         hits = await self._hybrid_retriever.retrieve_async(rewritten, top_k=top_k)
+        trace.mark("retrieval", metadata={"num_hits": len(hits), "mode": mode}, start=_s)
         retrieval_meta = {
             "intent": intent.value,
             "rewritten": rewritten if rewritten != query else None,
@@ -227,15 +254,35 @@ class QueryNest:
             "mode": mode,
         }
 
+        # 无命中：直接返回友好提示，避免 LLM 在空上下文下编造或返回 no-context 英文模板。
+        if not hits:
+            result = RetrievalResult(
+                answer="当前知识库中还没有文档，无法回答该问题。请先通过左侧「Documents」页面上传文档后再提问。",
+                sources=[],
+                retrieval=retrieval_meta,
+                metadata={"intent": intent.value, "rewritten": rewritten != query and rewritten or None, "empty": True},
+            )
+            self._finish_trace(trace, result, _t0, empty=True)
+            return result
+
         # 4) Rerank
+        _s = time.perf_counter()
         if self.enable_rerank and hits:
             reranked = self.reranker.rerank(rewritten, hits, top_k=min(len(hits), top_k))
             if reranked:
                 hits = [hits[i] for i, _ in reranked]
                 retrieval_meta["reranked"] = True
+        trace.mark(
+            "rerank",
+            status="skipped" if not self.enable_rerank else "success",
+            metadata={"count": len(hits), "enabled": bool(self.enable_rerank)},
+            start=_s,
+        )
 
         # 5) Context Builder
+        _s = time.perf_counter()
         context_items = self.context_builder.build(hits)
+        trace.mark("context_builder", metadata={"items": len(context_items)}, start=_s)
 
         # 6) LLM 生成
         context_text = self.context_builder.render(context_items)
@@ -244,25 +291,52 @@ class QueryNest:
         else:
             llm_context = ""
 
+        _s = time.perf_counter()
         try:
-            answer = await self._rag_engine.aquery(
-                rewritten,
-                mode=mode,
-                system_prompt=system_prompt,
-                **kwargs,
-            )
+            swap = await self._swap_request_model("chat", model_id)
+            try:
+                answer = await self._rag_engine.aquery(
+                    rewritten,
+                    mode=mode,
+                    system_prompt=system_prompt,
+                    **kwargs,
+                )
+            finally:
+                self._restore_request_model(swap)
         except Exception as e:
+            trace.mark("generation", status="failed", error=str(e), start=_s)
+            trace.error = f"LLM 生成失败: {e}"
+            self._stash_trace(trace)
             raise QueryError(f"LLM 生成失败: {e}") from e
+        trace.mark("generation", start=_s)
 
         # 7) Citation
+        _s = time.perf_counter()
         sources = self.citation_builder.build(hits)
+        trace.mark("citation", metadata={"count": len(sources)}, start=_s)
 
-        return RetrievalResult(
+        result = RetrievalResult(
             answer=answer,
             sources=sources,
             retrieval=retrieval_meta,
             metadata={"intent": intent.value, "rewritten": rewritten != query and rewritten or None},
         )
+        self._finish_trace(trace, result, _t0)
+        return result
+
+    def _finish_trace(self, trace, result, t0: float, empty: bool = False):
+        """把 trace_id 写回结果并落库；trace 的 total_latency 用真实结束时刻计算。"""
+        if trace.trace_id:
+            result.metadata["trace_id"] = trace.trace_id
+            result.retrieval["trace_id"] = trace.trace_id
+        trace.finalize(citations=list(getattr(result, "sources", []) or []))
+        trace_store.put(trace)
+        return result
+
+    def _stash_trace(self, trace):
+        """在生成阶段失败时，仍把已记录的步骤与错误保存，便于解释失败原因。"""
+        trace.finalize(citations=[], error=trace.error)
+        trace_store.put(trace)
 
     async def query_multimodal(
         self,
@@ -375,7 +449,7 @@ class QueryNest:
         if self._hybrid_retriever is not None:
             return
 
-        # 委托给内部 RAGAnything 初始化
+        # 委托给内部 RAG 引擎初始化
         await self._init_rag_engine()
 
         # 构建 HybridRetriever
@@ -389,6 +463,53 @@ class QueryNest:
             reranker=self.reranker if self.enable_rerank else None,
             enable_rerank=self.enable_rerank,
         )
+
+    def retrieval_strategies(self) -> Dict[str, Optional[Callable[[str], List[Dict[str, Any]]]]]:
+        """暴露真实检索策略（用于 Retrieval Ablation）。
+
+        返回 ``{strategy_name: sync_callable | None}``，name 取 snake_case：
+        ``vector`` / ``keyword`` / ``hybrid`` / ``hybrid_rerank``。
+
+        - ``vector``       : Dense（向量）单路
+        - ``keyword``      : Keyword（BM25）单路
+        - ``hybrid``       : Dense+Keyword+Graph RRF 融合（不重排）
+        - ``hybrid_rerank``: 在上述融合后再经 Reranker 重排；未激活 reranker
+                             时返回 None（调用方标记 not_available，不伪造）。
+
+        每个回调在真实调用处计时；底层单路失败按现有 graceful 逻辑返回空，
+        不会因单路失败拖垮消融。
+        """
+        if self._hybrid_retriever is None:
+            raise RuntimeError("检索器尚未初始化，请先完成一次查询或调用 _ensure_initialized()")
+
+        def _sync(retriever: BaseRetriever) -> Callable[[str], List[Dict[str, Any]]]:
+            def _run(query: str) -> List[Dict[str, Any]]:
+                return _run_awaitable(retriever.retrieve_async(query, top_k=20))
+            return _run
+
+        strategies: Dict[str, Optional[Callable[[str], List[Dict[str, Any]]]]] = {
+            "vector": _sync(self._hybrid_retriever.routes.get("dense"))
+            if "dense" in (self._hybrid_retriever.routes or {}) else None,
+            "keyword": _sync(self._hybrid_retriever.routes.get("keyword"))
+            if "keyword" in (self._hybrid_retriever.routes or {}) else None,
+            "hybrid": _sync(self._hybrid_retriever),
+        }
+        if self.enable_rerank and self.reranker is not None and not isinstance(self.reranker, NoopReranker):
+            def _hybrid_rerank(query: str) -> List[Dict[str, Any]]:
+                hits = _run_awaitable(self._hybrid_retriever.retrieve_async(query, top_k=20))
+                pairs = self.reranker.rerank(query, hits, top_k=len(hits))
+                rescored = []
+                for idx, score in pairs:
+                    h = dict(hits[idx])
+                    h["score"] = float(score)
+                    h["reranked"] = True
+                    rescored.append(h)
+                rescored.sort(key=lambda h: h.get("score", 0.0), reverse=True)
+                return rescored
+            strategies["hybrid_rerank"] = _hybrid_rerank
+        else:
+            strategies["hybrid_rerank"] = None
+        return strategies
 
     def _build_lightrag_embedding_func(self) -> Optional[EmbeddingFunc]:
         """把 QueryNest 的 embedding 回调封装成 LightRAG 1.5.x 需要的 ``EmbeddingFunc``。
@@ -419,20 +540,55 @@ class QueryNest:
         )
 
     def _ensure_client_funcs(self) -> None:
-        """未显式传入 LLM/Embedding 回调时，按 config（QUERYNEST_*/.env）自动构建。
+        """未显式传入 LLM/Embedding 回调时，自动构建。
 
-        CLI / API / quickstart 等入口通常只传 config；这里保证"配置好 .env 即可真实运行"。
-        显式传入的回调不会被覆盖；构建失败仅记录 warning，由后续初始化给出明确提示。
+        优先读取模型注册表（ModelRegistry 中当前激活的 chat/vision/embedding
+        模型配置）；没有注册表时回退到 config（QUERYNEST_*/.env）。显式传入
+        的回调不会被覆盖；构建失败仅记录 warning，由后续初始化给出明确提示。
         """
-        if self.llm_model_func is not None and self.embedding_func is not None:
-            pass  # LLM/Embedding 已显式提供，继续按需补 Vision
-        try:
-            from querynest.core.clients import (
-                build_openai_embedding_func,
-                build_openai_llm_func,
-                build_vision_model_func,
-            )
+        from querynest.core.clients import (
+            build_openai_embedding_func,
+            build_openai_llm_func,
+            build_vision_model_func,
+        )
+        from querynest.core.model_registry import RegistryError
 
+        # 1) 模型注册表优先：用注册表中激活的模型配置构建真实回调
+        if self.model_registry is not None:
+            try:
+                if self.llm_model_func is None:
+                    chat = self.model_registry.resolve("chat")
+                    self.llm_model_func = build_openai_llm_func(
+                        api_key=chat.api_key or self.config.llm_api_key,
+                        base_url=chat.base_url or self.config.llm_base_url,
+                        model=chat.model or self.config.llm_model,
+                    )
+                if self.vision_model_func is None:
+                    try:
+                        vision = self.model_registry.resolve("vision")
+                        self.vision_model_func = build_vision_model_func(
+                            api_key=vision.api_key or self.config.llm_api_key,
+                            base_url=vision.base_url or self.config.llm_base_url,
+                            model=vision.model or self.config.vision_model or self.config.llm_model,
+                        )
+                    except RegistryError:
+                        pass  # 视觉模型未启用时保留 None，多模态路径正常回退
+                if self.embedding_func is None:
+                    emb = self.model_registry.resolve("embedding")
+                    self.embedding_func = build_openai_embedding_func(
+                        api_key=emb.api_key
+                        or self.config.embedding_binding_api_key
+                        or self.config.llm_api_key,
+                        base_url=emb.base_url or self.config.llm_base_url,
+                        model=emb.model or self.config.embedding_model,
+                    )
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning(
+                    "从模型注册表构建回调失败，回退到 config 构建: %s", e
+                )
+
+        # 2) config 兜底（未显式传入、也未覆盖时按 .env 构建）
+        try:
             if self.llm_model_func is None:
                 self.llm_model_func = build_openai_llm_func(self.config)
             if self.embedding_func is None:
@@ -446,8 +602,104 @@ class QueryNest:
                 "自动构建 LLM/Embedding/Visual 回调失败（初始化时将给出明确提示）: %s", e
             )
 
+    def apply_active_models(self, registry: Any = None, kinds=("chat", "vision")) -> List[str]:
+        """把注册表中当前激活的模型热替换到运行中的引擎（无需重启）。
+
+        仅热换 chat / vision 这类"随时可切"的模型函数；embedding 因维度不同
+        会影响向量库，不允许就地切换（见注册表维度护栏）。返回已应用用途列表。
+        """
+        reg = registry or self.model_registry
+        if reg is None:
+            return []
+        from querynest.core.clients import build_openai_llm_func, build_vision_model_func
+
+        applied: List[str] = []
+        if "chat" in kinds and self._lightrag is not None:
+            try:
+                chat = reg.resolve("chat")
+                new_func = build_openai_llm_func(
+                    api_key=chat.api_key or self.config.llm_api_key,
+                    base_url=chat.base_url or self.config.llm_base_url,
+                    model=chat.model or self.config.llm_model,
+                )
+                self.llm_model_func = new_func
+                self._lightrag.llm_model_func = _as_async(new_func)
+                self._rag_engine.llm_model_func = new_func
+                applied.append("chat")
+                self.logger.info(f"[models] 聊天模型已热切换为 {chat.model}")
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning(f"[models] 聊天模型热切换失败: {e}")
+        if "vision" in kinds:
+            try:
+                vision = reg.resolve("vision")
+                new_v = build_vision_model_func(
+                    api_key=vision.api_key or self.config.llm_api_key,
+                    base_url=vision.base_url or self.config.llm_base_url,
+                    model=vision.model or self.config.vision_model or self.config.llm_model,
+                )
+                self.vision_model_func = new_v
+                applied.append("vision")
+                self.logger.info(f"[models] 视觉模型已热切换为 {vision.model}")
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning(f"[models] 视觉模型热切换失败: {e}")
+        return applied
+
+    async def _swap_request_model(self, kind: str, model_id: Optional[str]):
+        """按请求作用域路由模型：解析 ``model_id`` 对应模型并临时挂载生成函数。
+
+        返回还原信息（供 ``_restore_request_model`` 调用）；未传 ``model_id`` 或无注册表
+        时为 ``None``（no-op）。这样「请求显式选中的模型」>「默认模型」真正生效，
+        请求结束后自动还原，不影响他人/下次请求。
+        """
+        if not model_id or self.model_registry is None:
+            return None
+        try:
+            entry = self.model_registry.resolve(kind, model_id)
+        except Exception as e:  # noqa: BLE001 —— 交给上层返回清晰错误
+            raise QueryError(str(e)) from e
+        if kind == "chat":
+            from querynest.core.clients import build_openai_llm_func
+
+            new_func = build_openai_llm_func(
+                api_key=entry.api_key, base_url=entry.base_url, model=entry.model,
+            )
+            prev = (self.llm_model_func, self._rag_engine.llm_model_func, self._lightrag.llm_model_func)
+            self.llm_model_func = new_func
+            self._rag_engine.llm_model_func = new_func
+            self._lightrag.llm_model_func = _as_async(new_func)
+            self.logger.info(
+                f"[query routing] model_id={model_id} → chat 模型 {entry.model}（provider={entry.provider or '-'}）"
+            )
+            return {"kind": "chat", "prev": prev}
+        if kind == "vision":
+            from querynest.core.clients import build_vision_model_func
+
+            new_func = build_vision_model_func(
+                api_key=entry.api_key, base_url=entry.base_url, model=entry.model,
+            )
+            prev = self.vision_model_func
+            self.vision_model_func = new_func
+            self.logger.info(
+                f"[query routing] model_id={model_id} → vision 模型 {entry.model}（provider={entry.provider or '-'}）"
+            )
+            return {"kind": "vision", "prev": prev}
+        return None
+
+    def _restore_request_model(self, swap: Any) -> None:
+        """请求结束后还原模型生成函数，避免污染全局状态。"""
+        if not swap:
+            return
+        prev = swap.get("prev")
+        if swap.get("kind") == "chat" and prev is not None:
+            llm, rag, light = prev
+            self.llm_model_func = llm
+            self._rag_engine.llm_model_func = rag
+            self._lightrag.llm_model_func = light
+        elif swap.get("kind") == "vision":
+            self.vision_model_func = prev
+
     async def _init_rag_engine(self):
-        """初始化内部 RAG-Anything 组合（整套流水线）。"""
+        """初始化内部 RAG 引擎（整套流水线）。"""
         from querynest.ingestion.parser import get_parser
 
         self._ensure_client_funcs()
@@ -502,7 +754,7 @@ class QueryNest:
                 # 只获取检索上下文（prompt），不生成回答，解析出命中的 chunks
                 prompt = await self._lightrag.aquery(query, param=param)
                 # 提取命中信息（依赖 LightRAG prompt 格式，通过正则解析标记）
-                return _extract_hits_from_prompt(prompt)
+                return _extract_hits_from_prompt(prompt, route_name="dense")
             except Exception as e:  # noqa: BLE001
                 # 单路失败不拖垮整次查询（如 LLM 限流），记录警告并返回空。
                 self.logger.warning(f"Dense retrieval 失败，返回空（graceful）：{e!s}")
@@ -519,7 +771,7 @@ class QueryNest:
             param = QueryParam(mode="global", only_need_prompt=True, top_k=top_k)
             try:
                 prompt = await self._lightrag.aquery(query, param=param)
-                return _extract_hits_from_prompt(prompt)
+                return _extract_hits_from_prompt(prompt, route_name="graph")
             except Exception as e:  # noqa: BLE001
                 # 图数据当前为 0 或 LLM 限流时，单路失败不拖垮 Dense+BM25。
                 self.logger.warning(f"Graph retrieval 失败，返回空（graceful）：{e!s}")
@@ -589,9 +841,9 @@ class QueryNest:
 # ==================================================================== #
 
 class _RAGAdapter(ProcessorMixin, QueryMixin):
-    """内部适配器，组合继承的 RAG-Anything 能力。
+    """内部适配器，组合继承的底层 RAG 能力。
 
-    对外暴露与旧 ProcessorMixin + QueryMixin 兼容的接口，让 QueryNest.ingest
+    对外暴露与继承的 ProcessorMixin + QueryMixin 兼容的接口，让 QueryNest.ingest
     和 QueryNest.query 能复用稳定代码而无需重写。继承 ``ProcessorMixin`` 从而
     直接获得 ``process_document_complete`` / ``parse_document`` 等完整流水线，
     避免在适配器里手动重建（否则会缺 ``process_document`` 等实例方法）。
@@ -688,7 +940,7 @@ _CTX_BULLET_RE = re.compile(r"^[-*]\s+", re.MULTILINE)
 _CTX_NUM_RE = re.compile(r"^\d+\.\s+", re.MULTILINE)
 
 
-def _extract_hits_from_prompt(prompt: Any) -> List[Dict[str, Any]]:
+def _extract_hits_from_prompt(prompt: Any, route_name: str = "dense") -> List[Dict[str, Any]]:
     """从 LightRAG ``only_need_prompt=True`` 的检索结果中尽力提取命中。
 
     LightRAG 公开 API 不直接返回结构化命中，这里把检索到的上下文文本封装为
@@ -697,24 +949,68 @@ def _extract_hits_from_prompt(prompt: Any) -> List[Dict[str, Any]]:
 
     Args:
         prompt: LightRAG 返回的检索提示文本（或 None）。
+        route_name: 检索路由名，用于 debug 标记，不作为真实文档名。
 
     Returns:
-        List[Dict]: ``[{"content": ..., "content_type": "text",
-                                    "source": "lightrag", "score": ..., ...}]``
+        List[Dict]: 聚合命中列表；无有效上下文时返回空列表。
     """
     if not isinstance(prompt, str) or not prompt.strip():
         return []
     text = prompt.strip()
-    first_line = text.splitlines()[0]
-    hint = first_line[:80] if first_line else ""
+
+    # LightRAG 未命中上下文时常见提示，不应包装成伪造来源。
+    no_context_markers = (
+        "[no-context]",
+        "no relevant information",
+        "no context available",
+        "unable to provide an answer",
+        "not able to provide an answer",
+        "does not contain",
+    )
+    lowered = text.lower()
+    if any(marker in lowered for marker in no_context_markers):
+        return []
+
+    # 尝试提取引用片段：以 [1] / - / 1. 等标记开头的段落。
+    paragraphs: List[str] = []
+    current: List[str] = []
+    for line in text.splitlines():
+        line = line.rstrip()
+        if not line:
+            if current:
+                paragraphs.append("\n".join(current))
+                current = []
+            continue
+        if (
+            _CTX_INDEX_RE.search(line)
+            or _CTX_BULLET_RE.match(line)
+            or _CTX_NUM_RE.match(line)
+            or (line.startswith("File:") or line.startswith("Source:"))
+        ):
+            if current:
+                paragraphs.append("\n".join(current))
+                current = []
+        current.append(line)
+    if current:
+        paragraphs.append("\n".join(current))
+
+    if not paragraphs:
+        # 没有任何可引用段落：说明检索确实没拿到上下文，不应伪造命中。
+        return []
+
+    # 取第一个非空段作为 hint，source 仅用于 debug 占位，真实文档名由 citation builder
+    # 在后续根据 document_name / source_path 映射补全。
+    first = paragraphs[0][:120].replace("\n", " ")
     return [
         {
-            "content": text,
+            "content": "\n\n".join(paragraphs),
             "content_type": "text",
-            "source": "lightrag",
+            "source": "",  # 空 source 会让 citation builder 跳过或标记为未知，避免显示 lightrag
+            "document_name": "",
+            "route": route_name,
             "score": 1.0,
             "reranked": False,
-            "metadata": {"hint": hint},
+            "metadata": {"hint": first},
         }
     ]
 
@@ -733,6 +1029,22 @@ def _as_async(func: Optional[Callable]) -> Optional[Callable]:
         return result
 
     return _wrapper
+
+
+def _run_awaitable(awaitable) -> Any:
+    """在一个可调用环境中执行协程并返回结果。
+
+    若当前已有运行中的事件循环（如在引擎内部被调用），则在独立线程中
+    ``asyncio.run`` 执行，避免 ``RuntimeError: This event loop is already running``；
+    否则直接 ``asyncio.run``。用于把 async 检索器暴露为同步策略回调（消融）。
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+    import concurrent.futures
+
+    return loop.run_in_executor(None, lambda: asyncio.run(awaitable))
 
 
 def _safe_call(func: Callable, texts: List[str]) -> Any:

@@ -123,3 +123,46 @@ class RetrievalResult:
             )
             body = f"{body}\n\n**Sources:**\n{refs}"
         return body
+
+
+@dataclass
+class Conversation:
+    """一次持久化会话（Chat History 的会话索引条目）。
+
+    ``model_id`` / ``retrieval_mode`` / ``document_ids`` 与会话绑定，
+    使不同会话可使用不同模型与知识库范围。
+    """
+
+    id: str
+    title: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    model_id: str = ""
+    retrieval_mode: str = "mix"
+    document_ids: List[str] = field(default_factory=list)
+    message_count: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Message:
+    """会话中的一条消息（user / assistant）。
+
+    assistant 消息额外保存 ``sources``（真实 Citation）、``retrieval`` 详情与
+    ``trace_id``，保证刷新页面后 Citation / Trace / Model 关联不丢失。
+    """
+
+    id: str
+    conversation_id: str
+    role: str = "user"  # user / assistant
+    content: str = ""
+    created_at: str = ""
+    model_id: str = ""
+    sources: List[Dict[str, Any]] = field(default_factory=list)
+    retrieval: Dict[str, Any] = field(default_factory=dict)
+    trace_id: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)

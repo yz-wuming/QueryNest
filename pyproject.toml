@@ -9,7 +9,7 @@ authors = [
     {name = "QueryNest Team"},
     {name = "Zirui Guo"},  # 原 RAG-Anything 作者（继承底层能力的来源，保留署名）
 ]
-description = "QueryNest — Multimodal Document Intelligence & RAG (fork of RAG-Anything)"
+description = "QueryNest — Multimodal Document Intelligence & RAG"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-# 继承自原 RAG-Anything 的底层运行时依赖
+# 底层运行时依赖（多模态解析与图检索）
 dependencies = [
     "huggingface_hub",
     "lightrag-hku<1.5",
@@ -80,7 +80,8 @@ querynest = "querynest.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/QueryNest/QueryNest"
-Issues = "https://github.com/HKUDS/RAG-Anything/issues"
+Repository = "https://github.com/QueryNest/QueryNest"
+Issues = "https://github.com/QueryNest/QueryNest/issues"
 # 来源：本项目 fork 自 HKUDS/RAG-Anything，遵守其 MIT License。
 Upstream = "https://github.com/HKUDS/RAG-Anything"
 
@@ -99,5 +100,5 @@ target-version = "py310"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test*.py"]
-# tests/legacy 存放从旧 RAG-Anything 继承的测试（依赖可选重型组件），默认不运行
-norecursedirs = ["examples", "legacy"]
+# 默认不收集 examples 目录为测试
+norecursedirs = ["examples"]

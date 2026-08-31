@@ -52,7 +52,7 @@ class EvalRunner:
         aggregated.update({"mrr@10": [], "ndcg@10": []})
         aggregated.update({"faithfulness": [], "answer_relevancy": []})
 
-        started = time.time()
+        started = time.perf_counter()
         for ex in examples:
             try:
                 hits = list(self.retriever(ex.question) or [])[:top_k]
@@ -84,7 +84,7 @@ class EvalRunner:
 
             per_example.append(row)
 
-        elapsed = time.time() - started
+        elapsed = time.perf_counter() - started
         summary: Dict[str, Any] = {}
         for metric, values in aggregated.items():
             if metric.endswith("faithfulness") or metric.endswith("relevancy"):
@@ -102,7 +102,7 @@ class EvalRunner:
             "top_k": top_k,
             "metrics": summary,
             "results": per_example,
-            "elapsed_seconds": round(elapsed, 3),
+            "elapsed_seconds": round(elapsed, 6),
         }
 
         write_results(report, self.output_path)
