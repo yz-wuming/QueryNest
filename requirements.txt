@@ -1,7 +1,7 @@
 huggingface_hub
 # LightRAG packages
 # 注意：需与 pyproject.toml 保持一致（<1.5：1.5.x 起接口变动，本项目未适配）
-lightrag-hku<1.5
+lightrag-hku<1.6
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 # >=3.4.1: earlier versions iterate pdftext's PageChars return value directly and
 # crash with "TypeError: 'PageChars' object is not iterable" against pdftext>=0.7

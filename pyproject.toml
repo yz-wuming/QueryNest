@@ -25,7 +25,7 @@ classifiers = [
 # 底层运行时依赖（多模态解析与图检索）
 dependencies = [
     "huggingface_hub",
-    "lightrag-hku<1.5",
+    "lightrag-hku<1.6",
     "mineru[core]>=3.4.1",
     "tqdm",
 ]
